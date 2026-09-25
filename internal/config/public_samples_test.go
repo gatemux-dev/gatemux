@@ -9,7 +9,7 @@ func TestPublicComposeConfigsLoad(t *testing.T) {
 	t.Setenv("GATEMUX_ADMIN_KEY", "fixture-only")
 	t.Setenv("OPENAI_API_KEY", "fixture-only")
 	t.Setenv("GATEMUX_MOCK_KEY", "fixture-only")
-	for _, path := range []string{"../../deploy/docker/config.yaml", "../../deploy/smoke/config.yaml", "../../deploy/docker/legacy-config.yaml"} {
+	for _, path := range []string{"../../deploy/docker/config.yaml", "../../deploy/smoke/config.yaml", "../../deploy/docker/legacy-config.yaml", "../../examples/vllm.yaml"} {
 		if _, err := Load(path); err != nil {
 			t.Fatalf("%s: %v", path, err)
 		}
@@ -29,7 +29,7 @@ func TestPublicComposeConfigsRejectMissingAdminKey(t *testing.T) {
 					}
 				}
 			}
-			for _, path := range []string{"../../deploy/docker/config.yaml", "../../deploy/smoke/config.yaml", "../../deploy/docker/legacy-config.yaml"} {
+			for _, path := range []string{"../../deploy/docker/config.yaml", "../../deploy/smoke/config.yaml", "../../deploy/docker/legacy-config.yaml", "../../examples/vllm.yaml"} {
 				_, err := Load(path)
 				if err == nil || err.Error() != `env var "GATEMUX_ADMIN_KEY" (admin.master_key_env) is empty` {
 					t.Fatalf("%s: expected missing admin key error, got %v", path, err)
