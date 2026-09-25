@@ -1,0 +1,19 @@
+server:
+  addr: ":4000"
+database:
+  driver: postgres
+  dsn: postgres://gatemux:gatemux@postgres:5432/gatemux?sslmode=disable
+redis:
+  addr: redis:6379
+  key_prefix: smoke
+admin:
+  master_key_env: GATEMUX_ADMIN_KEY
+deployments:
+  - name: mock
+    type: openai
+    upstream_model: mock-model
+    base_url: http://mock:18080/v1
+    api_key_env: GATEMUX_MOCK_KEY
+aliases:
+  - alias: smoke-model
+    deployments: [mock]

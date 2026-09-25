@@ -1,0 +1,153 @@
+# Default values for the gatemux chart. Override in your release-specific
+# values file. Comments below describe what each block actually does at
+# runtime so operators don't have to dig into templates.
+
+image:
+  repository: ghcr.io/gatemux-dev/gatemux
+  tag: ""             # leave empty to use Chart.appVersion
+  pullPolicy: IfNotPresent
+
+# Replicas share configured Redis coordination. Multi-host/rolling-upgrade
+# qualification remains open for the public alpha; validate your topology.
+replicaCount: 2
+
+# Must exceed config.server.shutdown grace_period + cleanup_timeout, plus
+# any externally configured preStop hook and routing propagation allowance.
+terminationGracePeriodSeconds: 45
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+# Horizontal Pod Autoscaler. Disabled by default; turn on once you have
+# a baseline of /v1 traffic. CPU 70% is a conservative target for a
+# gateway that mostly does I/O — most pods will be sitting on upstream
+# wait, not burning CPU.
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+# Service exposes :4000 inside the cluster. Set type: LoadBalancer or
+# stand up an Ingress in front when you want traffic from outside.
+service:
+  type: ClusterIP
+  port: 4000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: gatemux.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # - secretName: gatemux-tls
+  #   hosts: [gatemux.example.com]
+
+# Per-pod environment. Secrets-bound values like the OpenAI key,
+# GATEMUX_ADMIN_KEY, and OIDC_CLIENT_SECRET should come from .Values.envFrom
+# (a referenced Secret), not be inlined here.
+env: {}
+envFrom: []
+# - secretRef:
+#     name: gatemux-secrets
+
+# config.yaml mounted into the pod. Render whatever you want under here
+# and the chart serializes it; the resulting ConfigMap is the source of
+# truth for the running gateway.
+config:
+  server:
+    addr: ":4000"
+    read_timeout: 30s
+    v1_deadline: 90s
+    shutdown:
+      grace_period: 30s
+      cleanup_timeout: 10s
+    streaming:
+      first_event_timeout: 30s
+      idle_timeout: 30s
+      write_timeout: 15s
+      keepalive_interval: 0s
+    trusted_proxies: []
+    # Per-pod bounded admission. Keep this below the memory/socket limit of
+    # one pod; horizontal scaling multiplies max_in_flight by replica count.
+    admission:
+      max_in_flight: 1024
+      max_queued: 256
+      queue_timeout: 250ms
+  database:
+    driver: postgres
+    dsn: "postgres://gatemux:gatemux@postgres:5432/gatemux?sslmode=disable"
+  redis:
+    addr: "redis:6379"
+    db: 0
+    key_prefix: "gatemux"
+    # password_env: REDIS_PASSWORD
+  admin:
+    master_key_env: GATEMUX_ADMIN_KEY
+    # disable_master_key: true   # reject master-key auth after provisioning an admin
+    # secure_cookies: true       # required behind HTTPS termination
+
+  payloads:
+    retention_hours: 168
+    prune_interval_hours: 1
+
+  # Optional OIDC. Empty issuer disables the surface entirely.
+  # oidc:
+  #   issuer: https://accounts.google.com
+  #   client_id: ...
+  #   client_secret_env: OIDC_CLIENT_SECRET
+  #   redirect_url: https://gatemux.example.com/auth/oidc/callback
+  #   provider_name: Google
+  #   default_role: member
+
+  deployments: []
+  aliases: []
+
+# Postgres / Redis are NOT part of this chart — operators should bring
+# their own (RDS, Cloud SQL, ElastiCache, etc.). For dev there's a
+# docker-compose stack at deploy/docker/.
+
+podAnnotations: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  readOnlyRootFilesystem: true
+
+serviceAccount:
+  create: true
+  name: ""
+
+# Probes target /healthz and /readyz. Both are unauthenticated by design
+# so the kubelet doesn't need a session.
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#fbfbfc" />
+    <title>GateMux</title>
+    <link rel="preload" href="/fonts/IBMPlexSansVariable.woff2" as="font" type="font/woff2" crossorigin />
+    <script>
+      // Apply persisted theme before React mounts so we don't flash the
+      // wrong palette on cold load.
+      (function () {
+        try {
+          var stored = localStorage.getItem('gatemux.theme') || localStorage.getItem('aiport.theme')
+          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+          var theme = stored === 'light' || stored === 'dark' ? stored : (prefersDark ? 'dark' : 'light')
+          document.documentElement.setAttribute('data-theme', theme)
+        } catch (e) {}
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

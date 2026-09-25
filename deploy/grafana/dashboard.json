@@ -1,0 +1,171 @@
+{
+  "title": "GateMux gateway",
+  "uid": "gatemux-overview",
+  "schemaVersion": 39,
+  "tags": ["gatemux", "llm-gateway"],
+  "timezone": "browser",
+  "time": {"from": "now-6h", "to": "now"},
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "alias",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+        "query": "label_values(gatemux_inference_requests_total, alias)",
+        "includeAll": true,
+        "multi": true,
+        "current": {"text": "All", "value": "$__all"}
+      },
+      {
+        "name": "provider",
+        "type": "query",
+        "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+        "query": "label_values(gatemux_inference_requests_total, provider)",
+        "includeAll": true,
+        "multi": true,
+        "current": {"text": "All", "value": "$__all"}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Build info",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "targets": [{"expr": "gatemux_build_info", "instant": true, "refId": "A"}],
+      "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"1": {"text": "running"}}}]}},
+      "gridPos": {"x": 0, "y": 0, "w": 4, "h": 3}
+    },
+    {
+      "id": 2,
+      "title": "In-flight requests",
+      "type": "stat",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "targets": [{"expr": "sum(gatemux_http_in_flight_requests)", "refId": "A"}],
+      "gridPos": {"x": 4, "y": 0, "w": 4, "h": 3}
+    },
+    {
+      "id": 3,
+      "title": "Inference RPS by alias",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "targets": [
+        {
+          "expr": "sum by (alias) (rate(gatemux_inference_requests_total{alias=~\"$alias\", provider=~\"$provider\"}[1m]))",
+          "legendFormat": "{{alias}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {"x": 8, "y": 0, "w": 16, "h": 7}
+    },
+    {
+      "id": 4,
+      "title": "p50 / p95 inference latency by alias",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le, alias) (rate(gatemux_inference_duration_seconds_bucket{alias=~\"$alias\"}[5m])))",
+          "legendFormat": "p50 {{alias}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, alias) (rate(gatemux_inference_duration_seconds_bucket{alias=~\"$alias\"}[5m])))",
+          "legendFormat": "p95 {{alias}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}},
+      "gridPos": {"x": 0, "y": 7, "w": 12, "h": 7}
+    },
+    {
+      "id": 5,
+      "title": "Error rate by alias",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "targets": [
+        {
+          "expr": "sum by (alias) (rate(gatemux_inference_requests_total{alias=~\"$alias\", status=~\"4..|5..\"}[5m])) / sum by (alias) (rate(gatemux_inference_requests_total{alias=~\"$alias\"}[5m]))",
+          "legendFormat": "{{alias}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percentunit"}},
+      "gridPos": {"x": 12, "y": 7, "w": 12, "h": 7}
+    },
+    {
+      "id": 6,
+      "title": "Cost burn (USD/min, top alias)",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "targets": [
+        {
+          "expr": "topk(10, sum by (alias) (rate(gatemux_cost_cents_total{alias=~\"$alias\"}[1m])) / 100 * 60)",
+          "legendFormat": "{{alias}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}},
+      "gridPos": {"x": 0, "y": 14, "w": 12, "h": 7}
+    },
+    {
+      "id": 7,
+      "title": "Token throughput by type",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "targets": [
+        {"expr": "sum by (type) (rate(gatemux_tokens_total{alias=~\"$alias\"}[1m]))", "legendFormat": "{{type}}", "refId": "A"}
+      ],
+      "gridPos": {"x": 12, "y": 14, "w": 12, "h": 7}
+    },
+    {
+      "id": 8,
+      "title": "Rate-limit denials",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "targets": [{"expr": "sum by (scope, metric) (rate(gatemux_rate_limit_denials_total[5m]))", "legendFormat": "{{scope}}/{{metric}}", "refId": "A"}],
+      "gridPos": {"x": 0, "y": 21, "w": 8, "h": 7}
+    },
+    {
+      "id": 9,
+      "title": "Budget denials",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "targets": [{"expr": "sum by (scope) (rate(gatemux_budget_denials_total[5m]))", "legendFormat": "{{scope}}", "refId": "A"}],
+      "gridPos": {"x": 8, "y": 21, "w": 8, "h": 7}
+    },
+    {
+      "id": 10,
+      "title": "Open circuit breakers",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "targets": [{"expr": "gatemux_circuit_breaker_open", "legendFormat": "{{deployment}}", "refId": "A"}],
+      "gridPos": {"x": 16, "y": 21, "w": 8, "h": 7}
+    },
+    {
+      "id": 11,
+      "title": "Upstream attempts by outcome",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "targets": [{"expr": "sum by (deployment, outcome) (rate(gatemux_upstream_attempts_total{provider=~\"$provider\"}[5m]))", "legendFormat": "{{deployment}} / {{outcome}}", "refId": "A"}],
+      "gridPos": {"x": 0, "y": 28, "w": 12, "h": 7}
+    },
+    {
+      "id": 12,
+      "title": "Cache hit rate by alias",
+      "type": "timeseries",
+      "datasource": {"type": "prometheus", "uid": "${DS_PROMETHEUS}"},
+      "targets": [
+        {
+          "expr": "sum by (alias) (rate(gatemux_cache_lookups_total{alias=~\"$alias\", result=\"hit\"}[5m])) / sum by (alias) (rate(gatemux_cache_lookups_total{alias=~\"$alias\"}[5m]))",
+          "legendFormat": "{{alias}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percentunit"}},
+      "gridPos": {"x": 12, "y": 28, "w": 12, "h": 7}
+    }
+  ]
+}

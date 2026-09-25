@@ -1,0 +1,43 @@
+# Owned by scripts/smoke-compose.mjs. Fresh unique project, no persistent volumes.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: gatemux
+      POSTGRES_PASSWORD: gatemux
+      POSTGRES_DB: gatemux
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gatemux"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    tmpfs: [/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  mock:
+    build:
+      context: ../..
+      target: mock
+    command: ["-addr", ":18080", "-delay", "1ms"]
+  gateway:
+    build:
+      context: ../..
+      target: runtime
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      mock: {condition: service_started}
+    environment:
+      GATEMUX_ADMIN_KEY: ${GATEMUX_ADMIN_KEY:?Smoke runner must supply a random key}
+      GATEMUX_MOCK_KEY: synthetic-smoke-provider
+    ports: ["127.0.0.1::4000"]
+    volumes: ["./config.yaml:/etc/gatemux/config.yaml:ro"]
+    command: ["serve", "--config", "/etc/gatemux/config.yaml"]
+    stop_grace_period: 45s

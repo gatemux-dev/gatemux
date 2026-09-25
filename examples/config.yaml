@@ -1,0 +1,42 @@
+server:
+  addr: ":4000"
+  read_timeout: 30s
+  shutdown:
+    grace_period: 30s
+    cleanup_timeout: 10s
+  streaming:
+    first_event_timeout: 30s
+    idle_timeout: 30s
+    write_timeout: 15s
+    keepalive_interval: 0s # opt-in SSE comments; never extend deadlines
+  admission:
+    max_in_flight: 1024
+    max_queued: 256
+    queue_timeout: 250ms
+
+database:
+  driver: postgres
+  dsn: "postgres://gatemux:gatemux@localhost:55432/gatemux?sslmode=disable"
+
+admin:
+  master_key_env: GATEMUX_ADMIN_KEY
+
+deployments:
+  - name: openai-main
+    type: openai
+    upstream_model: gpt-4-turbo
+    api_key_env: OPENAI_API_KEY
+    max_parallel_requests: 128
+
+  - name: anthropic-main
+    type: anthropic
+    upstream_model: claude-sonnet-4-6
+    api_key_env: ANTHROPIC_API_KEY
+
+aliases:
+  - alias: gpt-4
+    deployments: [openai-main]
+  - alias: claude
+    deployments: [anthropic-main]
+  - alias: smart
+    deployments: [openai-main, anthropic-main]

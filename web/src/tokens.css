@@ -1,0 +1,211 @@
+/* GateMux design tokens — "Harbor": a quiet control plane.
+   Light + dark; [data-theme="dark"] on <html> swaps the layer.
+   Components reference semantic tokens only, never raw colors.
+
+   Principles the tokens encode:
+   - ink, not brand color, carries primary actions;
+   - one cobalt accent, reserved for focus, links, selection and charts;
+   - hairlines separate content; shadows are reserved for overlays. */
+
+/* IBM Plex is self-hosted (public/fonts, SIL OFL) so the console makes no
+   third-party request and works air-gapped. */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  src: url('/fonts/IBMPlexSansVariable.woff2') format('woff2');
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/IBMPlexMono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/IBMPlexMono-500.woff2') format('woff2');
+  font-weight: 500 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root,
+[data-theme="light"] {
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* surfaces */
+  --bg-base:        #ffffff;   /* content canvas */
+  --bg-rail:        #f6f7f9;   /* sidebar */
+  --bg-surface:     #ffffff;
+  --bg-raised:      #ffffff;
+  --bg-subtle:      #f4f5f7;   /* hover, inset wells */
+  --bg-inverted:    #1c2230;
+
+  /* ink */
+  --fg-base:        #1c2230;
+  --fg-muted:       #515b6d;
+  --fg-subtle:      #7f8898;
+  --fg-inverted:    #ffffff;
+
+  /* hairlines */
+  --border-base:    #e3e6eb;
+  --border-subtle:  #eceef2;
+  --border-strong:  #cdd2da;
+
+  /* primary actions are ink */
+  --ink:            #1c2230;
+  --ink-hover:      #2d3546;
+  --ink-fg:         #ffffff;
+
+  /* the single accent — cobalt */
+  --accent:         #3354d1;
+  --accent-hover:   #2a46b3;
+  --accent-subtle:  #eef1fc;
+  --accent-fg:      #ffffff;
+  --accent-text:    #2d4bc2;
+
+  /* status — muted, legible */
+  --success:        #2f7d4f;
+  --success-subtle: #edf6f0;
+  --success-fg:     #276a43;
+
+  --warning:        #b25e09;
+  --warning-subtle: #fbf3e8;
+  --warning-fg:     #95500a;
+
+  --danger:         #c43d2b;
+  --danger-subtle:  #fbefed;
+  --danger-fg:      #a83323;
+
+  /* charts — cobalt leads, the rest are quiet companions */
+  --chart-1:        #3354d1;
+  --chart-2:        #6b8ae6;
+  --chart-3:        #2f8f7a;
+  --chart-4:        #c98a2b;
+  --chart-5:        #c43d2b;
+  --chart-grid:     #eceef2;
+  --chart-axis:     #8a93a3;
+
+  /* elevation — overlays only */
+  --shadow-sm:      none;
+  --shadow-card:    none;
+  --shadow-md:      0 1px 2px rgba(28,34,48,0.06);
+  --shadow-pop:     0 12px 32px rgba(28,34,48,0.12), 0 2px 6px rgba(28,34,48,0.06);
+
+  --radius-sm: 6px;
+  --radius:    8px;
+  --radius-lg: 10px;
+
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg-base:        #13161c;
+  --bg-rail:        #0f1216;
+  --bg-surface:     #13161c;
+  --bg-raised:      #1a1e26;
+  --bg-subtle:      #1b1f27;
+  --bg-inverted:    #eef0f4;
+
+  --fg-base:        #e7e9ee;
+  --fg-muted:       #a2a9b6;
+  --fg-subtle:      #737c8b;
+  --fg-inverted:    #13161c;
+
+  --border-base:    #262b35;
+  --border-subtle:  #1e222b;
+  --border-strong:  #353b47;
+
+  --ink:            #e7e9ee;
+  --ink-hover:      #ffffff;
+  --ink-fg:         #13161c;
+
+  --accent:         #7b93f0;
+  --accent-hover:   #93a7f4;
+  --accent-subtle:  #1d2440;
+  --accent-fg:      #13161c;
+  --accent-text:    #9aaef5;
+
+  --success:        #5fb383;
+  --success-subtle: #15261d;
+  --success-fg:     #7ec79d;
+
+  --warning:        #dd9a4a;
+  --warning-subtle: #2a2013;
+  --warning-fg:     #e9b474;
+
+  --danger:         #e26b5a;
+  --danger-subtle:  #2c1714;
+  --danger-fg:      #ee9384;
+
+  --chart-1:        #7b93f0;
+  --chart-2:        #a3b5f5;
+  --chart-3:        #5fb39c;
+  --chart-4:        #dd9a4a;
+  --chart-5:        #e26b5a;
+  --chart-grid:     #232833;
+  --chart-axis:     #6c7483;
+
+  --shadow-md:      0 1px 2px rgba(0,0,0,0.4);
+  --shadow-pop:     0 14px 36px rgba(0,0,0,0.55), 0 2px 6px rgba(0,0,0,0.35);
+
+  color-scheme: dark;
+}
+
+/* ─── base resets ─────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+/* Root stays at the browser default (16px) so Tailwind's rem utilities keep
+   their intended sizes; the UI's 14px body size is set on body. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--fg-base);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body { font-size: 14px; }
+
+button, input, select, textarea { font-family: inherit; }
+
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings: 'liga' off;
+  letter-spacing: -0.01em;
+}
+
+.tnum { font-variant-numeric: tabular-nums; }
+
+.density-comfortable { --row-pad-y: 13px; --row-pad-x: 16px; }
+.density-cozy        { --row-pad-y: 11px; --row-pad-x: 14px; }
+.density-compact     { --row-pad-y: 8px;  --row-pad-x: 12px; }
+
+::selection { background: var(--accent-subtle); color: var(--fg-base); }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

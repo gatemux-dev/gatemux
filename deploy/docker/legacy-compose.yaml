@@ -1,0 +1,18 @@
+# Opt-in upgrade template. Validate the exact existing volume before using it.
+# Never run against a new installation. See docs/rename-upgrade.md.
+services:
+  postgres:
+    environment:
+      POSTGRES_USER: aiport
+      POSTGRES_PASSWORD: aiport
+      POSTGRES_DB: aiport
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aiport"]
+  gatemux:
+    volumes:
+      - ./legacy-config.yaml:/etc/gatemux/config.yaml:ro
+
+volumes:
+  gatemux_pg_data:
+    external: true
+    name: ${GATEMUX_LEGACY_PG_VOLUME:?Set the exact existing Postgres volume name; do not create an empty replacement}

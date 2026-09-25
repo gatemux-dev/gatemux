@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.log
+.vite/
+
+# tsc -b output for vite.config.ts — vite.config.js would shadow the .ts config
+vite.config.js
+vite.config.d.ts
+*.tsbuildinfo

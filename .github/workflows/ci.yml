@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TEST_DATABASE_URL: postgres://gatemux:gatemux@127.0.0.1:5432/gatemux?sslmode=disable
+      GATEMUX_TEST_REDIS_ADDR: 127.0.0.1:6379
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gatemux
+          POSTGRES_PASSWORD: gatemux
+          POSTGRES_DB: gatemux
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U gatemux" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Build web app
+        run: npm run build
+        working-directory: web
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Race and static analysis
+        run: |
+          go test -race ./internal/server ./internal/api ./internal/auth ./internal/config
+          go vet ./...
+
+      - name: Web tests
+        run: |
+          npm --prefix web audit
+          npm --prefix web test
+          node --test web/tests/auth-client.test.cjs
+          node --test scripts/rename.test.mjs
+
+      - name: Isolated Docker startup and inference smoke
+        run: node scripts/smoke-compose.mjs
+
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Scan complete Git history
+        shell: bash
+        run: |
+          set -euo pipefail
+          audit_dir=$(mktemp -d)
+          curl --fail --silent --show-error --location \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
+            --output "$audit_dir/gitleaks.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $audit_dir/gitleaks.tar.gz" | sha256sum --check
+          tar -xzf "$audit_dir/gitleaks.tar.gz" -C "$audit_dir" gitleaks
+          "$audit_dir/gitleaks" git --redact=100 --no-banner --ignore-gitleaks-allow --log-opts='--all --full-history' .

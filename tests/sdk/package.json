@@ -1,0 +1,6 @@
+{
+  "name": "gatemux-sdk-contracts",
+  "private": true,
+  "type": "module",
+  "devDependencies": { "openai": "7.10.0" }
+}

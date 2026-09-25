@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: gatemux
+      POSTGRES_PASSWORD: gatemux
+      POSTGRES_DB: gatemux
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - gatemux_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gatemux"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:56379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  dex:
+    profiles: [oidc-dev]
+    # Local OIDC IdP for smoke-testing the SSO flow. Static client +
+    # static user, no real DB. The compose alias 'dex' resolves inside
+    # the docker network; gateway container hits dex:5556, host hits
+    # localhost:5556.
+    image: ghcr.io/dexidp/dex:v2.41.1
+    ports:
+      - "127.0.0.1:5556:5556"
+    volumes:
+      - ./dex.yaml:/etc/dex/config.yaml:ro
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+
+  gatemux:
+    image: gatemux:dev
+    # Must exceed server.shutdown grace_period + cleanup_timeout.
+    stop_grace_period: 45s
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-fake-key-for-dev}
+      GATEMUX_ADMIN_KEY: ${GATEMUX_ADMIN_KEY:-${AIPORT_ADMIN_KEY:?Set GATEMUX_ADMIN_KEY to a strong random secret}}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-gatemux-dex-secret}
+    ports:
+      - "127.0.0.1:${GATEMUX_PORT:-${AIPORT_PORT:-4000}}:4000"
+    volumes:
+      - ./config.yaml:/etc/gatemux/config.yaml:ro
+    command: ["serve", "--config", "/etc/gatemux/config.yaml"]
+
+volumes:
+  gatemux_pg_data:

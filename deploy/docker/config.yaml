@@ -1,0 +1,41 @@
+server:
+  addr: ":4000"
+  read_timeout: 30s
+  shutdown:
+    grace_period: 30s
+    cleanup_timeout: 10s
+  streaming:
+    first_event_timeout: 30s
+    idle_timeout: 30s
+    write_timeout: 15s
+    keepalive_interval: 0s
+  admission:
+    max_in_flight: 1024
+    max_queued: 256
+    queue_timeout: 250ms
+
+database:
+  driver: postgres
+  dsn: "postgres://gatemux:gatemux@postgres:5432/gatemux?sslmode=disable"
+
+redis:
+  addr: "redis:6379"
+  db: 0
+  key_prefix: "gatemux"
+
+admin:
+  master_key_env: GATEMUX_ADMIN_KEY
+
+# OIDC is opt-in. Configure a real issuer for deployment; the oidc-dev
+# Compose profile starts a local test IdP but does not enable sign-in itself.
+
+deployments:
+  - name: openai-main
+    type: openai
+    upstream_model: gpt-4-turbo
+    api_key_env: OPENAI_API_KEY
+    max_parallel_requests: 128
+
+aliases:
+  - alias: gpt-4
+    deployments: [openai-main]

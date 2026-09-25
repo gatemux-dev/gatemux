@@ -1,0 +1,6 @@
+title = "GateMux secret scanning"
+
+[extend]
+useDefault = true
+
+# No broad source/test exclusions. Triage new findings before publication.

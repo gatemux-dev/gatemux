@@ -1,0 +1,10 @@
+DROP TRIGGER budget_usage_no_truncate ON usage_log;
+DROP TRIGGER budget_reservation_no_truncate ON budget_reservations;
+DROP TRIGGER budget_usage_daily ON usage_log;
+DROP TRIGGER budget_reservation_daily ON budget_reservations;
+DROP TABLE budget_daily_totals;
+DROP FUNCTION budget_reject_truncate();
+DROP FUNCTION budget_usage_daily_trigger();
+DROP FUNCTION budget_reservation_daily_trigger();
+DROP FUNCTION budget_apply_daily(BIGINT,BIGINT,BIGINT,BIGINT,BIGINT,TIMESTAMPTZ,BIGINT);
+DROP INDEX usage_log_budget_request;

@@ -1,0 +1,11 @@
+/* GateMux stylesheet entry. tokens.css is the source of truth for color,
+   font, and motion tokens; app.css carries all component CSS (the old
+   console.css patch layer is folded into its tail). Tailwind sits on
+   top for spacing/layout utilities and to keep the design tokens
+   reachable as `bg-base`, `fg-muted`, etc. */
+@import "./tokens.css";
+@import "./app.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

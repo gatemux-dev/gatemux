@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>GateMux API reference</title>
+<script>try{var t=localStorage.getItem('gatemux.theme')||localStorage.getItem('aiport.theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/docs/style.css"><script defer src="/docs/explorer.js"></script></head>
+<body>
+<header>
+  <div class="head-l"><a class="back" href="/">Console</a><h1>API reference</h1><p>Every route this gateway serves, generated from the running build. Requests go to this origin only.</p></div>
+  <a class="btn btn-ghost" href="/openapi/v1.json">Download OpenAPI 3.1</a>
+</header>
+<main>
+<aside><label for="filter">Find an endpoint</label><input id="filter" type="search" placeholder="teams, chat, pricing…"><nav id="routes" aria-label="API endpoints"></nav></aside>
+<section aria-live="polite">
+  <h2 id="title">Choose an endpoint</h2><p id="description">Nothing is sent until you select Send request. Browsing the schema never calls the API.</p>
+  <details><summary>Operation schema</summary><pre id="schema"></pre></details>
+  <form id="request">
+    <label for="url">Request path and query</label><input id="url" required placeholder="/v1/models" spellcheck="false">
+    <label for="key">Bearer key</label><input id="key" type="password" autocomplete="off" placeholder="Optional with a console session. Kept in this page only.">
+    <label for="body">JSON body</label><textarea id="body" rows="12" spellcheck="false">{}</textarea>
+    <label class="confirm"><input id="confirm" type="checkbox"> I understand this request may change data or incur provider usage.</label>
+    <p id="notice">Read-only requests need no confirmation. Use an SDK or CLI for multipart uploads.</p>
+    <div class="actions"><button id="send" type="submit" disabled>Send request</button><button id="cancel" class="btn-ghost" type="button" disabled>Cancel</button></div>
+  </form>
+  <h3>Response</h3><p id="status" role="status"></p><pre id="output" tabindex="0"></pre>
+</section>
+</main></body></html>
