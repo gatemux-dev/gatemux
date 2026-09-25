@@ -52,7 +52,9 @@ services:
         condition: service_healthy
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-fake-key-for-dev}
-      GATEMUX_ADMIN_KEY: ${GATEMUX_ADMIN_KEY:-${AIPORT_ADMIN_KEY:?Set GATEMUX_ADMIN_KEY to a strong random secret}}
+      # Avoid nested :? errors: older Compose evaluates even unused defaults.
+      # An empty result is rejected by config validation before gateway startup.
+      GATEMUX_ADMIN_KEY: ${GATEMUX_ADMIN_KEY:-${AIPORT_ADMIN_KEY:-}}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-gatemux-dex-secret}
     ports:
       - "127.0.0.1:${GATEMUX_PORT:-${AIPORT_PORT:-4000}}:4000"

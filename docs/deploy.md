@@ -9,6 +9,11 @@ Follow the [README](../README.md). Set a strong `GATEMUX_ADMIN_KEY` before every
 Compose command. Postgres data is stored in the named `gatemux_pg_data` volume;
 `stop` preserves it. Do not use `down --volumes` on data you want to keep.
 
+The gateway rejects a missing or empty admin key during startup, before opening
+the database or listener. Compose rendering (`config`, including `--quiet`)
+does not validate this credential: the portable legacy-variable fallback may
+render an empty value. No default admin key is supplied.
+
 The sample database credentials and provider placeholder are for a loopback-only
 development stack. Replace them and use managed secrets for deployment. Never
 commit real credentials, local configuration, database dumps or request captures.

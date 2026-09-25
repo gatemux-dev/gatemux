@@ -7,7 +7,7 @@ function compose(extra = {}, legacy = false) {
   const env = { ...process.env };
   for (const k of ['GATEMUX_ADMIN_KEY', 'AIPORT_ADMIN_KEY', 'GATEMUX_PORT', 'AIPORT_PORT', 'GATEMUX_LEGACY_PG_VOLUME']) delete env[k];
   Object.assign(env, extra);
-  const args = ['compose', '-p', 'rename-check', '-f', 'deploy/docker/docker-compose.yml'];
+  const args = ['compose', '--env-file', '/dev/null', '-p', 'rename-check', '-f', 'deploy/docker/docker-compose.yml'];
   if (legacy) args.push('-f', 'deploy/docker/legacy-compose.yaml');
   args.push('config', '--format', 'json');
   return JSON.parse(execFileSync('docker', args, { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
@@ -21,7 +21,6 @@ test('canonical module, command, image and chart agree', () => {
 });
 
 test('fresh Compose uses GateMux and retains loopback bindings with legacy env fallback', () => {
-  assert.throws(() => compose());
   const old = compose({ AIPORT_ADMIN_KEY: 'fixture-only', AIPORT_PORT: '44001' });
   assert.equal(old.services.gatemux.environment.GATEMUX_ADMIN_KEY, 'fixture-only');
   assert.equal(old.services.gatemux.ports[0].published, '44001');
@@ -31,6 +30,24 @@ test('fresh Compose uses GateMux and retains loopback bindings with legacy env f
   assert.equal(current.services.postgres.environment.POSTGRES_DB, 'gatemux');
   assert.equal(current.volumes.gatemux_pg_data.name, 'rename-check_gatemux_pg_data');
   for (const service of Object.values(current.services)) for (const port of service.ports || []) assert.equal(port.host_ip, '127.0.0.1');
+});
+
+test('Compose admin key selection is portable and never supplies a default secret', async (t) => {
+  const cases = [
+    ['canonical only', { GATEMUX_ADMIN_KEY: 'fixture-current' }, 'fixture-current'],
+    ['legacy only', { AIPORT_ADMIN_KEY: 'fixture-old' }, 'fixture-old'],
+    ['canonical wins', { GATEMUX_ADMIN_KEY: 'fixture-current', AIPORT_ADMIN_KEY: 'fixture-old' }, 'fixture-current'],
+    ['empty canonical uses legacy', { GATEMUX_ADMIN_KEY: '', AIPORT_ADMIN_KEY: 'fixture-old' }, 'fixture-old'],
+    ['both unset', {}, ''],
+    ['both empty', { GATEMUX_ADMIN_KEY: '', AIPORT_ADMIN_KEY: '' }, ''],
+  ];
+  for (const [name, env, expected] of cases) {
+    await t.test(name, () => {
+      assert.equal(compose(env).services.gatemux.environment.GATEMUX_ADMIN_KEY, expected);
+    });
+  }
+  // Empty keys are rejected by config.Load and the Docker startup smoke test,
+  // not by Compose interpolation (which differs across Compose versions).
 });
 
 test('upgrade Compose requires an explicit external existing volume and keeps database identity', () => {

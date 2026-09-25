@@ -10,6 +10,8 @@
 
 ## Unreleased — public alpha
 
+- Fixed Compose compatibility when only `GATEMUX_ADMIN_KEY` is set; retained
+  legacy-key fallback and added missing-key startup regression checks.
 - Go gateway with embedded admin console, compatible chat/embeddings, streaming,
   provider routing, retries and fallback.
 - Team and virtual-key access, accounts, OIDC, budgets, rates and concurrency.

@@ -65,7 +65,10 @@ Existing `gw-` virtual keys remain unchanged.
   `AIPORT_*` equivalents when the new variable is unset; explicitly empty new
   values do not fall back. Old explicit `admin.master_key_env` names still work.
   Provider credential references are literal and unchanged. Compose also accepts
-  old admin-key and port variables; test/SDK script flags now use `GATEMUX_*`.
+  old admin-key and port variables, falling back when the new value is unset or
+  empty. If neither admin key is populated, the gateway rejects startup; Compose
+  rendering alone does not validate credentials. Test/SDK script flags now use
+  `GATEMUX_*`.
 - Use `X-Gatemux-Tags`, `X-Gatemux-Region`, `X-Gatemux-Customer-Id` and
   `X-Gatemux-No-Cache`. Old `X-Aiport-*` aliases remain accepted. A nonempty new
   header wins conflicts, except no-cache, where either value of `1` bypasses

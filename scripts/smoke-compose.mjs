@@ -1,6 +1,6 @@
 // Fresh project, tmpfs dependencies, loopback ephemeral gateway port, synthetic
 // upstream only. No preview volumes, provider credentials or paid requests.
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { resolve, dirname } from 'node:path';
@@ -24,6 +24,18 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => {
 try {
   console.log(`Starting isolated project ${project}`);
   await run(['up', '-d', '--build']);
+  // A one-off container publishes no ports and must fail in config validation,
+  // before opening the store or starting the listener. Never print its output.
+  const noKey = spawnSync('docker', [...args, 'run', '--rm', '--no-deps', '-T',
+    '-e', 'GATEMUX_ADMIN_KEY=', '-e', 'AIPORT_ADMIN_KEY=', 'gateway'], {
+    cwd: root, env, encoding: 'utf8', timeout: 30000,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  assert.equal(noKey.error, undefined, 'missing-key startup check did not finish');
+  assert.equal(noKey.status, 1, 'gateway must exit with code 1 without an admin key');
+  assert(noKey.stderr.includes('serve: load config: env var "GATEMUX_ADMIN_KEY" (admin.master_key_env) is empty'),
+    'gateway must reject the missing admin key before store/listener startup');
+  console.log('PASS: gateway refuses to start without an admin key');
   const address = execFileSync('docker', [...args, 'port', 'gateway', '4000'], { cwd: root, env, encoding: 'utf8' }).trim();
   assert.match(address, /^127\.0\.0\.1:\d+$/);
   const base = `http://${address}`;
