@@ -3,7 +3,7 @@
 # produce a complete image. Previously the Dockerfile only ran `go build`
 # and silently embedded whatever happened to be in web/dist on the host,
 # so a dev who skipped `npm run build` would ship a stale UI.
-FROM node:24-alpine AS web-build
+FROM node:25-alpine AS web-build
 WORKDIR /web
 
 # Cache npm install separately from source so source-only edits don't bust
