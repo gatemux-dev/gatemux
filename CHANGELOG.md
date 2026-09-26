@@ -8,8 +8,13 @@
   compatibility. Follow the [upgrade guide](docs/rename-upgrade.md) to preserve
   database/Redis identities and update monitoring. No data migration is performed.
 
-## Unreleased — public alpha
+## v0.1.0-alpha — 2026-09-26
 
+First tagged public alpha.
+
+- Release artifacts: linux/darwin amd64/arm64 binaries and a multi-arch
+  `ghcr.io/gatemux-dev/gatemux` image; the Helm chart now defaults to this image.
+- vLLM configuration example and guide.
 - Fixed Compose compatibility when only `GATEMUX_ADMIN_KEY` is set; retained
   legacy-key fallback and added missing-key startup regression checks.
 - Go gateway with embedded admin console, compatible chat/embeddings, streaming,
