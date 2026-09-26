@@ -15,7 +15,7 @@ COPY web/ ./
 RUN npm run build
 
 # Stage 2 — build the Go binary, embedding the SPA from stage 1.
-FROM golang:1.25-alpine AS go-build
+FROM golang:1.27-alpine AS go-build
 WORKDIR /src
 
 COPY go.mod go.sum ./
