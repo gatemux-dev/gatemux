@@ -26,8 +26,9 @@ RUN go mod download
 COPY . .
 COPY --from=web-build /web/dist ./web/dist
 
+ARG VERSION=0.0.0-dev
 RUN CGO_ENABLED=0 GOOS=linux go build \
-    -ldflags="-s -w" \
+    -ldflags="-s -w -X main.version=${VERSION}" \
     -o /out/gatemux \
     ./cmd/gatemux
 

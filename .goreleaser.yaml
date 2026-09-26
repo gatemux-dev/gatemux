@@ -1,0 +1,41 @@
+# Release binaries for tagged versions. The container image is built separately
+# from the Dockerfile by .github/workflows/release.yml.
+version: 2
+
+project_name: gatemux
+
+before:
+  hooks:
+    # The Go binary embeds web/dist, so the console must be built first.
+    - npm --prefix web ci --no-audit --no-fund
+    - npm --prefix web run build
+
+builds:
+  - id: gatemux
+    main: ./cmd/gatemux
+    binary: gatemux
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version={{ .Version }}"]
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, README.md, CHANGELOG.md, examples/*]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  filters:
+    exclude: ["^chore\\(deps\\)", "^Merge pull request .* from gatemux-dev/dependabot"]
+
+release:
+  prerelease: auto
+  footer: |
+    **Container image:** `docker pull ghcr.io/gatemux-dev/gatemux:{{ .Version }}`
+
+    GateMux is a public alpha; read the [alpha limitations](https://github.com/gatemux-dev/gatemux/blob/main/docs/public-alpha.md) before routing real traffic.

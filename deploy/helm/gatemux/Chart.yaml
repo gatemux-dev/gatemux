@@ -3,7 +3,7 @@ name: gatemux
 description: GateMux — open-source LLM gateway with budgets, routing, and audit
 type: application
 version: 0.1.0
-appVersion: "0.0.0-dev"
+appVersion: "0.1.0-alpha"
 home: https://github.com/gatemux-dev/gatemux
 maintainers:
   - name: GateMux

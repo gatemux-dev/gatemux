@@ -15,7 +15,8 @@ import (
 	"github.com/gatemux-dev/gatemux/internal/store"
 )
 
-const version = "0.0.0-dev"
+// version is overridden at release build time via -ldflags "-X main.version=...".
+var version = "0.0.0-dev"
 
 func main() {
 	if len(os.Args) < 2 {
