@@ -1,0 +1,20 @@
+server:
+  addr: ":4000"
+
+database:
+  driver: postgres
+  dsn: "postgres://gatemux:gatemux@localhost:55432/gatemux?sslmode=disable"
+
+admin:
+  master_key_env: GATEMUX_ADMIN_KEY
+
+deployments:
+  - name: vllm-local
+    type: vllm
+    base_url: http://localhost:8000/v1
+    upstream_model: my-model
+    api_key_env: VLLM_API_KEY
+
+aliases:
+  - alias: vllm
+    deployments: [vllm-local]

@@ -80,6 +80,7 @@ docker compose -f deploy/docker/docker-compose.yml stop
 - [Deployment, security and upgrades](docs/deploy.md)
 - [API compatibility](docs/api-compatibility.md)
 - [Configuration example](examples/config.yaml)
+- [vLLM example and setup](docs/vllm.md)
 - [Contributing and tests](CONTRIBUTING.md)
 - [Security reporting](SECURITY.md)
 - [Changelog](CHANGELOG.md)
