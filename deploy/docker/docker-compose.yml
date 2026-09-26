@@ -39,12 +39,11 @@ services:
     command: ["dex", "serve", "/etc/dex/config.yaml"]
 
   gatemux:
-    image: gatemux:dev
+    # Published release image. Keep the default in step with the Helm chart's
+    # appVersion; add docker-compose.build.yml to run a local source build.
+    image: ghcr.io/gatemux-dev/gatemux:${GATEMUX_VERSION:-0.1.0-alpha}
     # Must exceed server.shutdown grace_period + cleanup_timeout.
     stop_grace_period: 45s
-    build:
-      context: ../..
-      dockerfile: Dockerfile
     depends_on:
       postgres:
         condition: service_healthy

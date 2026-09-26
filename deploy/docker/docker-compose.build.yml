@@ -1,0 +1,10 @@
+# Opt-in override: build the gateway from this checkout instead of pulling the
+# published image. Use it to try local changes:
+#   docker compose -f deploy/docker/docker-compose.yml \
+#     -f deploy/docker/docker-compose.build.yml up -d --build
+services:
+  gatemux:
+    image: gatemux:dev
+    build:
+      context: ../..
+      dockerfile: Dockerfile

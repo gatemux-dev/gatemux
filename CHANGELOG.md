@@ -8,6 +8,12 @@
   compatibility. Follow the [upgrade guide](docs/rename-upgrade.md) to preserve
   database/Redis identities and update monitoring. No data migration is performed.
 
+## Unreleased
+
+- The Compose quickstart pulls the published image instead of building from
+  source (`GATEMUX_VERSION` selects a release); `docker-compose.build.yml`
+  keeps the source build for contributors.
+
 ## v0.1.0-alpha — 2026-09-26
 
 First tagged public alpha.

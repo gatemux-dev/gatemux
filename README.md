@@ -44,8 +44,10 @@ Requirements: Docker with Compose, and OpenSSL to generate an admin secret.
 ```sh
 git clone https://github.com/gatemux-dev/gatemux.git && cd gatemux
 export GATEMUX_ADMIN_KEY="$(openssl rand -hex 32)"
-docker compose -f deploy/docker/docker-compose.yml up -d --build
+docker compose -f deploy/docker/docker-compose.yml up -d
 ```
+
+This pulls the published `ghcr.io/gatemux-dev/gatemux` image; no build step.
 
 Open **http://localhost:4000**, choose **Emergency / break-glass admin key** and
 paste the value of `GATEMUX_ADMIN_KEY`. There is no default admin key; save it in
@@ -82,6 +84,14 @@ Stop without deleting database state:
 
 ```sh
 docker compose -f deploy/docker/docker-compose.yml stop
+```
+
+To run a different release, set `GATEMUX_VERSION` (for example `0.1.0-alpha`).
+To build from your checkout instead, add the source-build override:
+
+```sh
+docker compose -f deploy/docker/docker-compose.yml \
+  -f deploy/docker/docker-compose.build.yml up -d --build
 ```
 
 Upgrading an existing installation? Read the [rename upgrade guide](docs/rename-upgrade.md)

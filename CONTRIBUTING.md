@@ -52,8 +52,9 @@ If Playwright and its Chromium browser are installed, set
 browser checks against that isolated stack. `PLAYWRIGHT_MODULE` may point to
 your separate Playwright installation. The scripts do not install it for you.
 
-For the console, follow the [local quickstart](README.md). The Dockerfile builds
-the frontend automatically. Run `docker build .` for packaging changes.
+For the console, follow the [local quickstart](README.md). It pulls the published
+image; to run your changes, add `-f deploy/docker/docker-compose.build.yml` and
+`--build`. The Dockerfile builds the frontend automatically. Run `docker build .` for packaging changes.
 
 ## Pull requests
 

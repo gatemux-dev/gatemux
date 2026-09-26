@@ -18,6 +18,11 @@ test('canonical module, command, image and chart agree', () => {
   assert.match(readFileSync('Dockerfile', 'utf8'), /\.\/cmd\/gatemux\b/);
   assert.match(readFileSync('Dockerfile', 'utf8'), /ENTRYPOINT \["\/gatemux"\]/);
   assert.match(readFileSync('deploy/helm/gatemux/values.yaml', 'utf8'), /ghcr\.io\/gatemux-dev\/gatemux/);
+  // Compose and Helm must default to the same published release.
+  const appVersion = readFileSync('deploy/helm/gatemux/Chart.yaml', 'utf8').match(/^appVersion: "([^"]+)"$/m)[1];
+  const composeImage = readFileSync('deploy/docker/docker-compose.yml', 'utf8').match(/image: ghcr\.io\/gatemux-dev\/gatemux:\$\{GATEMUX_VERSION:-([^}]+)\}/);
+  assert(composeImage, 'Compose must default to the published gatemux image');
+  assert.equal(composeImage[1], appVersion);
 });
 
 test('fresh Compose uses GateMux and retains loopback bindings with legacy env fallback', () => {
