@@ -18,8 +18,8 @@ export default function Signup({ onLogin }: { onLogin: (p: Principal) => void })
       .catch((e) => setLoadErr(e instanceof ApiError ? e.message : 'invalid invite'))
   }, [token])
 
-  if (loadErr) return <Shell title="Invite not valid" body={loadErr} />
-  if (!invite) return <Shell title="Loading" body="Validating invite…" />
+  if (loadErr) return <Shell title="Invite not valid" body={loadErr} bodyRole="alert" />
+  if (!invite) return <Shell title="Loading" body="Validating invite…" bodyRole="status" />
 
   return (
     <Form
@@ -136,7 +136,7 @@ function Form({
             onChange={(e) => setConfirm(e.target.value)}
           />
         </Field>
-        {err && <p className="text-xs text-danger">{err}</p>}
+        {err && <p role="alert" className="text-xs text-danger">{err}</p>}
         <Button
           type="submit"
           fullWidth
@@ -154,11 +154,13 @@ function Shell({
   title,
   subtitle,
   body,
+  bodyRole,
   children,
 }: {
   title: string
   subtitle?: string
   body?: string
+  bodyRole?: 'alert' | 'status'
   children?: React.ReactNode
 }) {
   return (
@@ -174,7 +176,7 @@ function Shell({
           </div>
         </div>
         <div className="rounded-xl border border-border-base bg-bg-surface p-6 shadow-sm">
-          {body && <p className="text-center text-sm text-fg-muted">{body}</p>}
+          {body && <p role={bodyRole} className="text-center text-sm text-fg-muted">{body}</p>}
           {children}
         </div>
       </div>
