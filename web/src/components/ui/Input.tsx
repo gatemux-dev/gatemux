@@ -26,13 +26,22 @@ export function Field({ label, hint, error, required, id, children }: FieldProps
   // label did nothing. Generate one and clone it onto the first element
   // child (Input/Textarea/Select forward it to the real control).
   const autoId = useId()
-  const fieldId = id ?? autoId
+  const firstControl = Children.toArray(children).find(isValidElement)
+  const childId = firstControl ? (firstControl.props as { id?: string }).id : undefined
+  const fieldId = id ?? childId ?? autoId
+  const descriptionId = `${fieldId}-description`
   let injected = false
   const kids = Children.map(children, (child) => {
     if (!injected && isValidElement(child)) {
       injected = true
-      const childProps = child.props as { id?: string }
-      if (!childProps.id) return cloneElement(child, { id: fieldId } as Partial<unknown>)
+      const childProps = child.props as { id?: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean }
+      const describedBy = [childProps['aria-describedby'], (error || hint) && descriptionId]
+        .filter(Boolean).join(' ')
+      return cloneElement(child, {
+        id: fieldId,
+        'aria-describedby': describedBy || undefined,
+        'aria-invalid': error ? true : childProps['aria-invalid'],
+      } as Partial<unknown>)
     }
     return child
   })
@@ -46,9 +55,9 @@ export function Field({ label, hint, error, required, id, children }: FieldProps
       )}
       {kids}
       {error ? (
-        <p className="text-[12.5px] leading-snug text-danger-fg">{error}</p>
+        <p id={descriptionId} role="alert" className="text-[12.5px] leading-snug text-danger-fg">{error}</p>
       ) : hint ? (
-        <p className="text-[12.5px] leading-snug text-fg-subtle">{hint}</p>
+        <p id={descriptionId} className="text-[12.5px] leading-snug text-fg-subtle">{hint}</p>
       ) : null}
     </div>
   )
