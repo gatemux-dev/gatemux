@@ -23,7 +23,11 @@ __pycache__/
 # Local config / state
 /.codex
 /.codex/
-/.claude/
+# Claude Code: share project skills, agents and settings; keep personal files local.
+/.claude/*
+!/.claude/skills/
+!/.claude/agents/
+!/.claude/settings.json
 /.agents/
 /.release/
 /.audit/
