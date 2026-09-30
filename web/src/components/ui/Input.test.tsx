@@ -9,6 +9,7 @@ describe('Field', () => {
     render(<Field label="Email" hint="Use your invitation address"><Input type="email" /></Field>)
 
     const input = screen.getByRole('textbox', { name: 'Email' })
+
     expect(input.getAttribute('aria-describedby')).toBe(screen.getByText('Use your invitation address').id)
   })
 
@@ -16,6 +17,7 @@ describe('Field', () => {
     render(
       <>
         <p id="existing-help">Existing help</p>
+
         <Field label="Confirm password" error="Passwords do not match">
           <Input type="password" aria-describedby="existing-help" />
         </Field>
@@ -24,8 +26,20 @@ describe('Field', () => {
 
     const input = screen.getByLabelText('Confirm password')
     const error = screen.getByText('Passwords do not match')
+
     expect(input.getAttribute('aria-describedby')?.split(' ')).toEqual(['existing-help', error.id])
     expect(input.getAttribute('aria-invalid')).toBe('true')
+  })
+
+  it('marks the control as invalid when an error is shown', () => {
+    render(
+      <Field label="Email" error="Invalid email">
+        <Input type="email" />
+      </Field>,
+    )
+
+    const input = screen.getByRole('textbox', { name: 'Email' })
+    expect(input.className).toContain('border-danger')
   })
 
   it('associates the label when the control supplies its own id', () => {

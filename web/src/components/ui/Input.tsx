@@ -9,6 +9,7 @@ import {
   TextareaHTMLAttributes,
   SelectHTMLAttributes,
 } from 'react'
+
 import { cn } from './cn'
 
 interface FieldProps {
@@ -34,13 +35,19 @@ export function Field({ label, hint, error, required, id, children }: FieldProps
   const kids = Children.map(children, (child) => {
     if (!injected && isValidElement(child)) {
       injected = true
-      const childProps = child.props as { id?: string; 'aria-describedby'?: string; 'aria-invalid'?: boolean }
+      const childProps = child.props as {
+        id?: string
+        'aria-describedby'?: string
+        'aria-invalid'?: boolean
+        invalid?: boolean
+      }
       const describedBy = [childProps['aria-describedby'], (error || hint) && descriptionId]
         .filter(Boolean).join(' ')
       return cloneElement(child, {
         id: fieldId,
         'aria-describedby': describedBy || undefined,
         'aria-invalid': error ? true : childProps['aria-invalid'],
+        invalid: error ? true : childProps['invalid'],
       } as Partial<unknown>)
     }
     return child
