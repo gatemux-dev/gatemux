@@ -56,6 +56,22 @@ For the console, follow the [local quickstart](README.md). It pulls the publishe
 image; to run your changes, add `-f deploy/docker/docker-compose.build.yml` and
 `--build`. The Dockerfile builds the frontend automatically. Run `docker build .` for packaging changes.
 
+## Specs and AI-assisted work
+
+Project principles live in [`.specify/memory/constitution.md`](.specify/memory/constitution.md);
+every change is checked against them. New features and behaviour changes,
+especially anything touching budgets, auth, routing, accounting, providers or
+public APIs, start with a short spec in `specs/<NNN-feature>/` using
+[Spec Kit](https://github.com/github/spec-kit). Bug fixes, docs, dependency bumps
+and good first issues can skip this and go straight to a PR.
+
+With [Claude Code](https://claude.com/claude-code), the repo already includes the
+Spec Kit skills (`.claude/skills/`) and project guidance (`CLAUDE.md`). Run
+`/speckit-specify`, then `/speckit-plan`, `/speckit-tasks` and
+`/speckit-implement`. Other agents can install the same workflow with
+`uv tool install specify-cli` and `specify init --here --integration <agent>`.
+Review everything an agent produces as your own work before opening a PR.
+
 ## Pull requests
 
 - Explain the user-visible change, risk and verification commands.
