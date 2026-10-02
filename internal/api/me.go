@@ -124,11 +124,12 @@ func (h *MeHandler) ListUsage(w http.ResponseWriter, r *http.Request) {
 }
 
 type MyBudgetResponse struct {
-	LimitCents  *int64    `json:"limit_cents,omitempty"`
-	Period      string    `json:"period"`
-	WindowStart time.Time `json:"window_start,omitempty"`
-	WindowEnd   time.Time `json:"window_end,omitempty"`
-	UsedCents   int64     `json:"used_cents"`
+	LimitCents     *int64    `json:"limit_cents,omitempty"`
+	Period         string    `json:"period"`
+	WindowStart    time.Time `json:"window_start,omitempty"`
+	WindowEnd      time.Time `json:"window_end,omitempty"`
+	UsedCents      int64     `json:"used_cents"` // ceil of UsedMicrocents
+	UsedMicrocents int64     `json:"used_microcents,string"`
 }
 
 func (h *MeHandler) GetBudget(w http.ResponseWriter, r *http.Request) {
@@ -154,11 +155,12 @@ func (h *MeHandler) GetBudget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, MyBudgetResponse{
-		LimitCents:  summary.LimitCents,
-		Period:      summary.Period,
-		WindowStart: summary.WindowStart,
-		WindowEnd:   summary.WindowEnd,
-		UsedCents:   summary.UsedCents,
+		LimitCents:     summary.LimitCents,
+		Period:         summary.Period,
+		WindowStart:    summary.WindowStart,
+		WindowEnd:      summary.WindowEnd,
+		UsedCents:      summary.UsedCents,
+		UsedMicrocents: summary.UsedMicrocents,
 	})
 }
 

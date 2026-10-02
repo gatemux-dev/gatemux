@@ -302,9 +302,10 @@ func (s *Store) UpdateTeamAllowedModels(ctx context.Context, slug string, models
 // each team: live keys, active members, and spend in the current budget
 // period (UTC calendar day or month, matching budget enforcement).
 type TeamListStats struct {
-	ActiveKeys       int64
-	Members          int64
-	PeriodSpendCents int64
+	ActiveKeys            int64
+	Members               int64
+	PeriodSpendCents      int64 // ceil of PeriodSpendMicrocents
+	PeriodSpendMicrocents int64
 }
 
 func (s *Store) TeamListStats(ctx context.Context, teamIDs []int64) (map[int64]TeamListStats, error) {
@@ -317,7 +318,7 @@ func (s *Store) TeamListStats(ctx context.Context, teamIDs []int64) (map[int64]T
 		       (SELECT COUNT(*) FROM virtual_keys k
 		         WHERE k.team_id = t.id AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at > NOW())),
 		       (SELECT COUNT(*) FROM users u WHERE u.team_id = t.id AND u.archived_at IS NULL),
-		       (SELECT COALESCE(SUM(l.cost_cents), 0) FROM usage_log l
+		       (SELECT COALESCE(SUM(COALESCE(l.cost_microcents, l.cost_cents * 1000000)), 0) FROM usage_log l
 		         WHERE l.team_id = t.id
 		           AND l.ts >= date_trunc(CASE WHEN t.period = 'day' THEN 'day' ELSE 'month' END, NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
 		FROM teams t
@@ -329,9 +330,13 @@ func (s *Store) TeamListStats(ctx context.Context, teamIDs []int64) (map[int64]T
 	for rows.Next() {
 		var id int64
 		var st TeamListStats
-		if err := rows.Scan(&id, &st.ActiveKeys, &st.Members, &st.PeriodSpendCents); err != nil {
+		if err := rows.Scan(&id, &st.ActiveKeys, &st.Members, &st.PeriodSpendMicrocents); err != nil {
 			return nil, err
 		}
+		if st.PeriodSpendMicrocents < 0 {
+			return nil, errors.New("negative team spend")
+		}
+		st.PeriodSpendCents = CeilCents(st.PeriodSpendMicrocents)
 		out[id] = st
 	}
 	return out, rows.Err()

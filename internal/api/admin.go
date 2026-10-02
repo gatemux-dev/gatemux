@@ -123,9 +123,10 @@ type TeamResponse struct {
 
 // TeamStatsResponse is included when the directory asks for ?stats=1.
 type TeamStatsResponse struct {
-	ActiveKeys       int64 `json:"active_keys"`
-	Members          int64 `json:"members"`
-	PeriodSpendCents int64 `json:"period_spend_cents"`
+	ActiveKeys            int64 `json:"active_keys"`
+	Members               int64 `json:"members"`
+	PeriodSpendCents      int64 `json:"period_spend_cents"` // ceil of PeriodSpendMicrocents
+	PeriodSpendMicrocents int64 `json:"period_spend_microcents,string"`
 }
 
 func teamToResponse(t *store.Team) TeamResponse {
@@ -189,7 +190,7 @@ func (h *AdminHandler) ListTeams(w http.ResponseWriter, r *http.Request) {
 		}
 		for i := range out {
 			st := stats[out[i].ID]
-			out[i].Stats = &TeamStatsResponse{ActiveKeys: st.ActiveKeys, Members: st.Members, PeriodSpendCents: st.PeriodSpendCents}
+			out[i].Stats = &TeamStatsResponse{ActiveKeys: st.ActiveKeys, Members: st.Members, PeriodSpendCents: st.PeriodSpendCents, PeriodSpendMicrocents: st.PeriodSpendMicrocents}
 		}
 	}
 	setTotalCount(w, total)

@@ -34,4 +34,12 @@ func TestKeyBudgetContract(t *testing.T) {
 	if get["responses"].(map[string]any)["200"] == nil || get["requestBody"] != nil {
 		t.Fatal("missing GET contract")
 	}
+	schema := get["responses"].(map[string]any)["200"].(map[string]any)["content"].(map[string]any)["application/json"].(map[string]any)["schema"].(map[string]any)
+	exact, _ := schema["properties"].(map[string]any)["used_microcents"].(map[string]any)
+	if exact["type"] != "string" || exact["pattern"] != "^(0|[1-9][0-9]{0,18})$" {
+		t.Fatalf("used_microcents schema: %v", exact)
+	}
+	if b, _ := json.Marshal(schema["required"]); string(b) != `["period","window_start","window_end","used_cents"]` {
+		t.Fatalf("required changed: %s", b)
+	}
 }

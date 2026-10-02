@@ -1218,11 +1218,12 @@ func (h *V1Handler) recordUsage(
 				Completion: u.CompletionTokens,
 				Total:      u.TotalTokens,
 			},
-			CostCents:  costCents,
-			LatencyMs:  latencyMs,
-			StatusCode: status,
-			Cached:     cached,
-			Error:      errMsg,
+			CostCents:      costCents,
+			CostMicrocents: costMicrocents,
+			LatencyMs:      latencyMs,
+			StatusCode:     status,
+			Cached:         cached,
+			Error:          errMsg,
 		})
 	}
 	if h.Telemetry != nil {

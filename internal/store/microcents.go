@@ -1,6 +1,9 @@
 package store
 
-import "math"
+import (
+	"errors"
+	"math"
+)
 
 // Exact costs are integer micro-cents: 1 µ¢ = 1/1,000,000 US cent. With rates
 // in whole cents per million tokens, Σ tokens × rate is exactly this unit.
@@ -44,4 +47,12 @@ func EffectiveMicrocents(cents int64, exact *int64) int64 {
 		return math.MaxInt64
 	}
 	return cents * MicrocentsPerCent
+}
+
+// AddMicrocents adds two non-negative amounts, failing instead of wrapping.
+func AddMicrocents(a, b int64) (int64, error) {
+	if a < 0 || b < 0 || a > math.MaxInt64-b {
+		return 0, errors.New("micro-cent total exceeds int64")
+	}
+	return a + b, nil
 }

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -112,11 +113,12 @@ func (l *Langfuse) Send(ctx context.Context, e Event) error {
 					"userId":    e.KeyPrefix,
 					"sessionId": e.TeamSlug,
 					"metadata": map[string]any{
-						"team_slug":  e.TeamSlug,
-						"deployment": e.Deployment,
-						"cached":     e.Cached,
-						"cost_cents": e.CostCents,
-						"latency_ms": e.LatencyMs,
+						"team_slug":       e.TeamSlug,
+						"deployment":      e.Deployment,
+						"cached":          e.Cached,
+						"cost_cents":      e.CostCents,
+						"cost_microcents": strconv.FormatInt(e.CostMicrocents, 10),
+						"latency_ms":      e.LatencyMs,
 					},
 					"tags": []string{"gatemux"},
 				},

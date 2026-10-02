@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 )
 
@@ -11,24 +12,28 @@ import (
 // charts: request volume, error count, token totals, and latency
 // percentiles inside a single bucket window.
 type UsageBucket struct {
-	Bucket           time.Time `json:"bucket"`
-	Requests         int64     `json:"requests"`
-	Errors           int64     `json:"errors"`
-	PromptTokens     int64     `json:"prompt_tokens"`
-	CompletionTokens int64     `json:"completion_tokens"`
-	TotalTokens      int64     `json:"total_tokens"`
-	CostCents        int64     `json:"cost_cents"`
-	LatencyP50Ms     float64   `json:"latency_p50_ms"`
-	LatencyP95Ms     float64   `json:"latency_p95_ms"`
-	CacheHits        int64     `json:"cache_hits"`
+	Bucket                   time.Time `json:"bucket"`
+	Requests                 int64     `json:"requests"`
+	Errors                   int64     `json:"errors"`
+	PromptTokens             int64     `json:"prompt_tokens"`
+	CompletionTokens         int64     `json:"completion_tokens"`
+	TotalTokens              int64     `json:"total_tokens"`
+	CostCents                int64     `json:"cost_cents"` // ceil of CostMicrocents
+	CostMicrocents           int64     `json:"cost_microcents,string"`
+	IncludesWholeCentHistory bool      `json:"includes_whole_cent_history"`
+	LatencyP50Ms             float64   `json:"latency_p50_ms"`
+	LatencyP95Ms             float64   `json:"latency_p95_ms"`
+	CacheHits                int64     `json:"cache_hits"`
 }
 
 // SpendBucket is a single point on the spend-over-time chart, with the
 // per-alias breakdown that lets us render a stacked bar.
+// Aliases holds rounded-up cents; AliasesMicrocents the exact base-10 values.
 type SpendBucket struct {
-	Bucket    time.Time        `json:"bucket"`
-	Total     SpendTotals      `json:"total"`
-	Aliases   map[string]int64 `json:"aliases"`
+	Bucket            time.Time         `json:"bucket"`
+	Total             SpendTotals       `json:"total"`
+	Aliases           map[string]int64  `json:"aliases"`
+	AliasesMicrocents map[string]string `json:"aliases_microcents"`
 }
 
 // SpendTimeseries wraps the bucket series with a stable alias list (ordered
@@ -145,7 +150,7 @@ func (s *Store) GetUsageAggregate(ctx context.Context, teamSlug, alias string, f
 		       COALESCE(SUM(u.prompt_tokens), 0) AS prompt_tokens,
 		       COALESCE(SUM(u.completion_tokens), 0) AS completion_tokens,
 		       COALESCE(SUM(u.total_tokens), 0) AS total_tokens,
-		       COALESCE(SUM(u.cost_cents), 0) AS cost_cents,
+		       `+spendCostColumns+`,
 		       COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY u.latency_ms), 0) AS p50,
 		       COALESCE(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY u.latency_ms), 0) AS p95,
 		       COUNT(*) FILTER (WHERE u.cached) AS cache_hits
@@ -168,10 +173,14 @@ func (s *Store) GetUsageAggregate(ctx context.Context, teamSlug, alias string, f
 		if err := rows.Scan(
 			&b.Bucket, &b.Requests, &b.Errors,
 			&b.PromptTokens, &b.CompletionTokens, &b.TotalTokens,
-			&b.CostCents, &b.LatencyP50Ms, &b.LatencyP95Ms, &b.CacheHits,
+			&b.CostMicrocents, &b.IncludesWholeCentHistory, &b.LatencyP50Ms, &b.LatencyP95Ms, &b.CacheHits,
 		); err != nil {
 			return nil, fmt.Errorf("scan usage bucket: %w", err)
 		}
+		if b.CostMicrocents < 0 {
+			return nil, fmt.Errorf("negative usage bucket cost")
+		}
+		b.CostCents = CeilCents(b.CostMicrocents)
 		out = append(out, b)
 	}
 	return out, rows.Err()
@@ -205,7 +214,7 @@ func (s *Store) GetSpendTimeseries(ctx context.Context, teamSlug string, userID 
 		       COALESCE(SUM(u.prompt_tokens), 0) AS prompt_tokens,
 		       COALESCE(SUM(u.completion_tokens), 0) AS completion_tokens,
 		       COALESCE(SUM(u.total_tokens), 0) AS total_tokens,
-		       COALESCE(SUM(u.cost_cents), 0) AS cost_cents
+		       `+spendCostColumns+`
 		FROM usage_log u
 		JOIN teams t ON t.id = u.team_id
 		WHERE %s
@@ -220,19 +229,20 @@ func (s *Store) GetSpendTimeseries(ctx context.Context, teamSlug string, userID 
 	defer rows.Close()
 
 	type aliasRow struct {
-		bucket    time.Time
-		alias     string
-		requests  int64
-		prompt    int64
-		complete  int64
-		total     int64
-		costCents int64
+		bucket     time.Time
+		alias      string
+		requests   int64
+		prompt     int64
+		complete   int64
+		total      int64
+		microcents int64
+		history    bool
 	}
 
 	rawRows := []aliasRow{}
 	for rows.Next() {
 		r := aliasRow{}
-		if err := rows.Scan(&r.bucket, &r.alias, &r.requests, &r.prompt, &r.complete, &r.total, &r.costCents); err != nil {
+		if err := rows.Scan(&r.bucket, &r.alias, &r.requests, &r.prompt, &r.complete, &r.total, &r.microcents, &r.history); err != nil {
 			return nil, fmt.Errorf("scan spend row: %w", err)
 		}
 		rawRows = append(rawRows, r)
@@ -248,17 +258,27 @@ func (s *Store) GetSpendTimeseries(ctx context.Context, teamSlug string, userID 
 	for _, r := range rawRows {
 		entry, ok := bucketMap[r.bucket]
 		if !ok {
-			entry = &SpendBucket{Bucket: r.bucket, Aliases: map[string]int64{}}
+			entry = &SpendBucket{Bucket: r.bucket, Aliases: map[string]int64{}, AliasesMicrocents: map[string]string{}}
 			bucketMap[r.bucket] = entry
 			bucketOrder = append(bucketOrder, r.bucket)
 		}
-		entry.Aliases[r.alias] = r.costCents
+		if r.microcents < 0 {
+			return nil, fmt.Errorf("negative spend row")
+		}
+		entry.Aliases[r.alias] = CeilCents(r.microcents)
+		entry.AliasesMicrocents[r.alias] = strconv.FormatInt(r.microcents, 10)
 		entry.Total.Requests += r.requests
 		entry.Total.PromptTokens += r.prompt
 		entry.Total.CompletionTokens += r.complete
 		entry.Total.TotalTokens += r.total
-		entry.Total.CostCents += r.costCents
-		aliasTotals[r.alias] += r.costCents
+		entry.Total.IncludesWholeCentHistory = entry.Total.IncludesWholeCentHistory || r.history
+		if entry.Total.CostMicrocents, err = AddMicrocents(entry.Total.CostMicrocents, r.microcents); err != nil {
+			return nil, fmt.Errorf("spend timeseries: %w", err)
+		}
+		entry.Total.CostCents = CeilCents(entry.Total.CostMicrocents)
+		if aliasTotals[r.alias], err = AddMicrocents(aliasTotals[r.alias], r.microcents); err != nil {
+			return nil, fmt.Errorf("spend timeseries: %w", err)
+		}
 	}
 
 	series := make([]SpendBucket, 0, len(bucketOrder))

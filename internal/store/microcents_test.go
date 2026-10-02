@@ -55,3 +55,14 @@ func TestEffectiveMicrocents(t *testing.T) {
 		}
 	}
 }
+
+func TestAddMicrocents(t *testing.T) {
+	if got, err := AddMicrocents(3000, 2000000); err != nil || got != 2003000 {
+		t.Fatalf("sum: %d %v", got, err)
+	}
+	for _, pair := range [][2]int64{{math.MaxInt64, 1}, {-1, 1}, {1, -1}} {
+		if _, err := AddMicrocents(pair[0], pair[1]); err == nil {
+			t.Fatalf("accepted %v", pair)
+		}
+	}
+}

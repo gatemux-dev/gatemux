@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/csv"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
@@ -76,17 +77,20 @@ func (h *AdminHandler) ExportAudit(w http.ResponseWriter, r *http.Request) {
 
 // ProjectionResponse is the spend-projection tile. on_track is "above",
 // "below", or "on" the linear pace.
+// Cents fields are the exact micro-cent values rounded up.
 type ProjectionResponse struct {
-	ScopeType       string  `json:"scope_type"`
-	ScopeID         int64   `json:"scope_id"`
-	PeriodStart     string  `json:"period_start"`
-	PeriodEnd       string  `json:"period_end"`
-	SpendSoFarCents int64   `json:"spend_so_far_cents"`
-	ProjectedCents  int64   `json:"projected_cents"`
-	LimitCents      *int64  `json:"limit_cents,omitempty"`
-	DaysToLimit     float64 `json:"days_to_limit,omitempty"`
-	OnTrack         string  `json:"on_track"`
-	NeedsMoreData   bool    `json:"needs_more_data"`
+	ScopeType            string  `json:"scope_type"`
+	ScopeID              int64   `json:"scope_id"`
+	PeriodStart          string  `json:"period_start"`
+	PeriodEnd            string  `json:"period_end"`
+	SpendSoFarCents      int64   `json:"spend_so_far_cents"`
+	SpendSoFarMicrocents int64   `json:"spend_so_far_microcents,string"`
+	ProjectedCents       int64   `json:"projected_cents"`
+	ProjectedMicrocents  int64   `json:"projected_microcents,string"`
+	LimitCents           *int64  `json:"limit_cents,omitempty"`
+	DaysToLimit          float64 `json:"days_to_limit,omitempty"`
+	OnTrack              string  `json:"on_track"`
+	NeedsMoreData        bool    `json:"needs_more_data"`
 }
 
 // GetProjection returns a forward-looking spend projection. Uses the
@@ -116,20 +120,20 @@ func (h *AdminHandler) GetProjection(w http.ResponseWriter, r *http.Request) {
 		period = "month"
 	}
 	start, end := windowFor(period, time.Now().UTC())
-	spendMicrocents, err := h.Store.SumTeamSpendInWindow(r.Context(), team.ID, start, end)
+	spend, err := h.Store.SumTeamSpendInWindow(r.Context(), team.ID, start, end)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	spend := store.CeilCents(spendMicrocents)
 	resp := ProjectionResponse{
-		ScopeType:       "team",
-		ScopeID:         team.ID,
-		PeriodStart:     start.Format(time.RFC3339),
-		PeriodEnd:       end.Format(time.RFC3339),
-		SpendSoFarCents: spend,
-		LimitCents:      team.UsdLimitCents,
-		OnTrack:         "unknown",
+		ScopeType:            "team",
+		ScopeID:              team.ID,
+		PeriodStart:          start.Format(time.RFC3339),
+		PeriodEnd:            end.Format(time.RFC3339),
+		SpendSoFarCents:      store.CeilCents(spend),
+		SpendSoFarMicrocents: spend,
+		LimitCents:           team.UsdLimitCents,
+		OnTrack:              "unknown",
 	}
 	now := time.Now().UTC()
 	totalSec := end.Sub(start).Seconds()
@@ -145,16 +149,23 @@ func (h *AdminHandler) GetProjection(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
-	resp.ProjectedCents = int64(float64(spend) / frac)
+	// A linear estimate in micro-cents, saturating rather than wrapping.
+	projected := float64(spend) / frac
+	resp.ProjectedMicrocents = math.MaxInt64
+	if projected < math.MaxInt64 {
+		resp.ProjectedMicrocents = int64(projected)
+	}
+	resp.ProjectedCents = store.CeilCents(resp.ProjectedMicrocents)
 	if team.UsdLimitCents != nil && *team.UsdLimitCents > 0 {
+		limit := store.LimitMicrocents(*team.UsdLimitCents)
 		dailyBurn := float64(spend) / (elapsedSec / 86400)
 		if dailyBurn > 0 {
-			resp.DaysToLimit = (float64(*team.UsdLimitCents - spend)) / dailyBurn
+			resp.DaysToLimit = (float64(limit) - float64(spend)) / dailyBurn
 		}
 		switch {
-		case resp.ProjectedCents > *team.UsdLimitCents:
+		case resp.ProjectedMicrocents > limit:
 			resp.OnTrack = "above"
-		case resp.ProjectedCents < int64(0.9*float64(*team.UsdLimitCents)):
+		case float64(resp.ProjectedMicrocents) < 0.9*float64(limit):
 			resp.OnTrack = "below"
 		default:
 			resp.OnTrack = "on"
