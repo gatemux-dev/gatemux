@@ -8,7 +8,7 @@
   compatibility. Follow the [upgrade guide](docs/rename-upgrade.md) to preserve
   database/Redis identities and update monitoring. No data migration is performed.
 
-## Unreleased
+## v0.2.0-alpha — 2026-10-02
 
 - The Compose quickstart pulls the published image instead of building from
   source (`GATEMUX_VERSION` selects a release); `docker-compose.build.yml`
@@ -37,6 +37,7 @@
 - Accessibility: Signup announces loading and errors to screen readers, and
   form fields link their hints and errors to the control and mark it invalid,
   visually and for assistive technology.
+- Dependencies: `golang.org/x/oauth2` 0.37.0; Bedrock runtime SDK 1.63.0.
 - Security hardening found by code scanning: the OIDC sign-in error page uses the
   standard HTML escaper, and expiring OIDC state cookies use the same `Secure`
   and `SameSite` policy as setting them.

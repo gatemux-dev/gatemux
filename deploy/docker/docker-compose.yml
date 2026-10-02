@@ -41,7 +41,7 @@ services:
   gatemux:
     # Published release image. Keep the default in step with the Helm chart's
     # appVersion; add docker-compose.build.yml to run a local source build.
-    image: ghcr.io/gatemux-dev/gatemux:${GATEMUX_VERSION:-0.1.0-alpha}
+    image: ghcr.io/gatemux-dev/gatemux:${GATEMUX_VERSION:-0.2.0-alpha}
     # Must exceed server.shutdown grace_period + cleanup_timeout.
     stop_grace_period: 45s
     depends_on:
