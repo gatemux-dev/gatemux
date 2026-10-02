@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/gatemux-dev/gatemux/internal/store"
 )
 
 func TestMeRejectsMissingToken(t *testing.T) {
@@ -157,5 +159,34 @@ func TestMeBudgetReturnsNoLimitWhenUnconfigured(t *testing.T) {
 	}
 	if resp.UsedCents != 0 {
 		t.Errorf("used_cents = %d, want 0", resp.UsedCents)
+	}
+}
+
+func TestMeUsageAccountingState(t *testing.T) {
+	env := newTestEnv(t)
+	team := env.createTeam("me-cost")
+	alice, token := env.createUser("alice-cost", false)
+	key := env.createKeyForUser(team, alice)
+	three, zero := int64(3000), int64(0)
+	for _, e := range []store.UsageEntry{
+		{Alias: "exact", Accounting: "priced", StatusCode: 200, CostMicrocents: &three},
+		{Alias: "unknown", Accounting: "unknown", StatusCode: 503, CostMicrocents: &zero},
+	} {
+		e.TeamID, e.UserID, e.KeyID, e.ModelRequested, e.RequestID = team.ID, &alice.ID, &key.ID, e.Alias, "me-"+randHex(6)
+		if err := env.Store.InsertUsage(context.Background(), e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, body := env.GET("/me/usage", token)
+	var rows []map[string]any
+	if code != http.StatusOK || json.Unmarshal(body, &rows) != nil || len(rows) != 2 {
+		t.Fatalf("me usage: %d %s", code, body)
+	}
+	want := map[string][3]string{"exact": {"priced", "3000", "exact"}, "unknown": {"unknown", "0", "exact"}}
+	for _, r := range rows {
+		w := want[r["alias"].(string)]
+		if r["accounting_state"] != w[0] || r["cost_microcents"] != w[1] || r["cost_precision"] != w[2] {
+			t.Fatalf("row %v, want state/µ¢/precision %v", r, w)
+		}
 	}
 }

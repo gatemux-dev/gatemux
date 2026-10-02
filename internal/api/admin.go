@@ -816,6 +816,8 @@ type UsageRowResponse struct {
 	CompletionTokens   int             `json:"completion_tokens"`
 	TotalTokens        int             `json:"total_tokens"`
 	CostCents          int64           `json:"cost_cents"`
+	CostMicrocents     int64           `json:"cost_microcents,string"`
+	CostPrecision      string          `json:"cost_precision"`
 	LatencyMs          int             `json:"latency_ms"`
 	QueueMs            *int            `json:"queue_ms,omitempty"`
 	UpstreamMs         *int            `json:"upstream_ms,omitempty"`
@@ -854,6 +856,7 @@ func usageRowToResponse(r *store.UsageRow) UsageRowResponse {
 		ModelUsed:      r.ModelUsed,
 		PromptTokens:   r.PromptTokens, CompletionTokens: r.CompletionTokens,
 		TotalTokens: r.TotalTokens, CostCents: r.CostCents,
+		CostMicrocents: r.CostMicrocents, CostPrecision: r.CostPrecision,
 		LatencyMs: r.LatencyMs,
 		QueueMs:   r.QueueMs, UpstreamMs: r.UpstreamMs,
 		TTFBMs: r.TTFBMs, PostprocessMs: r.PostprocessMs,

@@ -81,6 +81,9 @@ func newTestEnv(t *testing.T) *testEnv {
 
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireAdmin)
+			r.Get("/projections", adminH.GetProjection)
+			r.Get("/export/usage.csv", adminH.ExportUsage)
+			r.Get("/keys/{id}/effective-policy", adminH.GetEffectivePolicy)
 			r.Get("/users", adminH.ListUsers)
 			r.Post("/users/{id}/budget", adminH.UpdateUserBudget)
 			r.Patch("/users/{id}/concurrency", adminH.UpdateUserConcurrency)
@@ -134,7 +137,9 @@ func newTestEnv(t *testing.T) *testEnv {
 			r.Get("/usage", adminH.ListUsage)
 			r.Get("/usage/facets", adminH.GetUsageFacets)
 			r.Get("/usage/{id}", adminH.GetUsageRow)
+			r.Get("/usage/aggregate", adminH.GetUsageAggregate)
 			r.Get("/spend", adminH.GetSpendReport)
+			r.Get("/spend/timeseries", adminH.GetSpendTimeseries)
 			r.Get("/invites", adminH.ListInvites)
 			r.Post("/invites", adminH.CreateInvite)
 			r.Patch("/keys/{id}", adminH.UpdateKey)

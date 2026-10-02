@@ -46,12 +46,30 @@ type SpendGroup struct {
 	SpendTotals
 }
 
+// SpendTotals reports exact spend; CostCents is it rounded up. Rows recorded
+// before exact costs count as cents × 1e6 and set IncludesWholeCentHistory.
 type SpendTotals struct {
-	Requests         int64 `json:"requests"`
-	PromptTokens     int64 `json:"prompt_tokens"`
-	CompletionTokens int64 `json:"completion_tokens"`
-	TotalTokens      int64 `json:"total_tokens"`
-	CostCents        int64 `json:"cost_cents"`
+	Requests                 int64 `json:"requests"`
+	PromptTokens             int64 `json:"prompt_tokens"`
+	CompletionTokens         int64 `json:"completion_tokens"`
+	TotalTokens              int64 `json:"total_tokens"`
+	CostCents                int64 `json:"cost_cents"`
+	CostMicrocents           int64 `json:"cost_microcents,string"`
+	IncludesWholeCentHistory bool  `json:"includes_whole_cent_history"`
+}
+
+// spendCostColumns sums effective micro-cents and flags whole-cent history
+// that contributed a positive cost; finishSpendCost derives the cents.
+const spendCostColumns = `COALESCE(SUM(COALESCE(u.cost_microcents, u.cost_cents * 1000000)), 0),
+	COALESCE(bool_or(u.cost_microcents IS NULL AND u.cost_cents > 0), false)`
+
+// finishSpendCost derives the rounded-up cents from the exact sum.
+func (t *SpendTotals) finishSpendCost() error {
+	if t.CostMicrocents < 0 {
+		return fmt.Errorf("negative spend total")
+	}
+	t.CostCents = CeilCents(t.CostMicrocents)
+	return nil
 }
 
 type SpendByAlias struct {
@@ -286,7 +304,7 @@ func (s *Store) GetSpendReport(ctx context.Context, f SpendFilter) (*SpendReport
 
 	totalQuery := `
 		SELECT COUNT(*), COALESCE(SUM(u.prompt_tokens), 0), COALESCE(SUM(u.completion_tokens), 0),
-		       COALESCE(SUM(u.total_tokens), 0), COALESCE(SUM(u.cost_cents), 0)
+		       COALESCE(SUM(u.total_tokens), 0), ` + spendCostColumns + `
 		FROM usage_log u
 		JOIN teams t ON t.id = u.team_id
 		WHERE ` + where
@@ -295,19 +313,23 @@ func (s *Store) GetSpendReport(ctx context.Context, f SpendFilter) (*SpendReport
 		&report.Total.PromptTokens,
 		&report.Total.CompletionTokens,
 		&report.Total.TotalTokens,
-		&report.Total.CostCents,
+		&report.Total.CostMicrocents,
+		&report.Total.IncludesWholeCentHistory,
 	); err != nil {
 		return nil, fmt.Errorf("get spend totals: %w", err)
+	}
+	if err := report.Total.finishSpendCost(); err != nil {
+		return nil, err
 	}
 
 	aliasQuery := `
 		SELECT u.alias, COUNT(*), COALESCE(SUM(u.prompt_tokens), 0), COALESCE(SUM(u.completion_tokens), 0),
-		       COALESCE(SUM(u.total_tokens), 0), COALESCE(SUM(u.cost_cents), 0)
+		       COALESCE(SUM(u.total_tokens), 0), ` + spendCostColumns + `
 		FROM usage_log u
 		JOIN teams t ON t.id = u.team_id
 		WHERE ` + where + `
 		GROUP BY u.alias
-		ORDER BY COALESCE(SUM(u.cost_cents), 0) DESC, u.alias`
+		ORDER BY 6 DESC, u.alias`
 	rows, err := s.Pool.Query(ctx, aliasQuery, baseArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("get spend by alias: %w", err)
@@ -321,9 +343,13 @@ func (s *Store) GetSpendReport(ctx context.Context, f SpendFilter) (*SpendReport
 			&row.PromptTokens,
 			&row.CompletionTokens,
 			&row.TotalTokens,
-			&row.CostCents,
+			&row.CostMicrocents,
+			&row.IncludesWholeCentHistory,
 		); err != nil {
 			return nil, fmt.Errorf("scan spend row: %w", err)
+		}
+		if err := row.finishSpendCost(); err != nil {
+			return nil, err
 		}
 		report.Aliases = append(report.Aliases, row)
 	}
@@ -337,7 +363,7 @@ func (s *Store) GetSpendReport(ctx context.Context, f SpendFilter) (*SpendReport
 		report.Breakdown = []SpendGroup{}
 		groupQuery := `
 			SELECT ` + cols.key + `, ` + cols.label + `, COUNT(*), COALESCE(SUM(u.prompt_tokens), 0),
-			       COALESCE(SUM(u.completion_tokens), 0), COALESCE(SUM(u.total_tokens), 0), COALESCE(SUM(u.cost_cents), 0)
+			       COALESCE(SUM(u.completion_tokens), 0), COALESCE(SUM(u.total_tokens), 0), ` + spendCostColumns + `
 			FROM usage_log u
 			JOIN teams t ON t.id = u.team_id
 			` + cols.join + `
@@ -352,8 +378,11 @@ func (s *Store) GetSpendReport(ctx context.Context, f SpendFilter) (*SpendReport
 		defer grows.Close()
 		for grows.Next() {
 			g := SpendGroup{}
-			if err := grows.Scan(&g.Key, &g.Label, &g.Requests, &g.PromptTokens, &g.CompletionTokens, &g.TotalTokens, &g.CostCents); err != nil {
+			if err := grows.Scan(&g.Key, &g.Label, &g.Requests, &g.PromptTokens, &g.CompletionTokens, &g.TotalTokens, &g.CostMicrocents, &g.IncludesWholeCentHistory); err != nil {
 				return nil, fmt.Errorf("scan spend breakdown: %w", err)
+			}
+			if err := g.finishSpendCost(); err != nil {
+				return nil, err
 			}
 			report.Breakdown = append(report.Breakdown, g)
 		}

@@ -577,3 +577,33 @@ func TestAccountingMigrationPreservesLegacyEvidence(t *testing.T) {
 		t.Fatalf("historical reservation refunded: %s/%d %v", state, cost, err)
 	}
 }
+
+func TestRecoveryPreUpgradeIntent(t *testing.T) {
+	s, team, _ := accountingStore(t)
+	t.Cleanup(func() { assertDailyTotals(t, s) })
+	ctx := context.Background()
+	// A journal entry and reservation exactly as written before 0041: no
+	// "CostMicrocents" key, cents-only estimate.
+	if _, err := s.Pool.Exec(ctx, `INSERT INTO inference_journal(request_id,team_id,entry,recover_after,upstream_started)
+	 VALUES('pre-upgrade',$1,$2,NOW()-interval '1 second',true)`, team,
+		fmt.Sprintf(`{"AccountingID":"pre-upgrade","Accounting":"","TeamID":%d,"RequestID":"pre-upgrade","Alias":"test-model","CostCents":0,"Ts":%q}`,
+			team, time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Pool.Exec(ctx, `INSERT INTO budget_reservations(request_id,team_id,alias,estimated_cost_cents) VALUES('pre-upgrade',$1,'test-model',123)`, team); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.ReconcileAccounting(ctx); err != nil || n != 1 {
+		t.Fatalf("reconcile: %d %v", n, err)
+	}
+	var state string
+	var cents int64
+	var exact, settledExact *int64
+	if err := s.Pool.QueryRow(ctx, `SELECT u.accounting_state,u.cost_cents,u.cost_microcents,b.settled_cost_microcents
+	 FROM usage_log u JOIN budget_reservations b USING(request_id) WHERE u.accounting_id='pre-upgrade'`).Scan(&state, &cents, &exact, &settledExact); err != nil {
+		t.Fatal(err)
+	}
+	if state != "estimated" || cents != 123 || exact != nil || settledExact != nil {
+		t.Fatalf("pre-upgrade intent: %s %d ¢ µ¢=%v settled µ¢=%v, want whole-cent history", state, cents, exact, settledExact)
+	}
+}

@@ -25,7 +25,7 @@ func (h *AdminHandler) ExportUsage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", `attachment; filename="gatemux-usage-`+time.Now().Format("20060102")+`.csv"`)
 	cw := csv.NewWriter(w)
 	defer cw.Flush()
-	_ = cw.Write([]string{"id", "ts", "team", "alias", "deployment", "model", "prompt_tokens", "completion_tokens", "total_tokens", "cost_cents", "latency_ms", "status_code", "error", "accounting_state"})
+	_ = cw.Write([]string{"id", "ts", "team", "alias", "deployment", "model", "prompt_tokens", "completion_tokens", "total_tokens", "cost_cents", "latency_ms", "status_code", "error", "accounting_state", "cost_microcents", "cost_precision"})
 	for _, row := range rows {
 		_ = cw.Write([]string{
 			strconv.FormatInt(row.ID, 10),
@@ -42,6 +42,8 @@ func (h *AdminHandler) ExportUsage(w http.ResponseWriter, r *http.Request) {
 			strconv.Itoa(row.StatusCode),
 			row.Error,
 			row.Accounting,
+			strconv.FormatInt(row.CostMicrocents, 10),
+			row.CostPrecision,
 		})
 	}
 }

@@ -11,26 +11,24 @@ import (
 )
 
 type UsageEntry struct {
-	AccountingID       string
-	Accounting         string
-	TokenDetails       json.RawMessage `json:",omitempty"`
-	TeamID             int64
-	UserID             *int64
-	KeyID              *int64
-	CustomerID         *int64
-	CustomerExternalID string
-	Alias              string
-	DeploymentName     string
-	RequestID          string
-	ModelRequested     string
-	ModelUsed          string
-	PromptTokens       int
-	CompletionTokens   int
-	TotalTokens        int
-	CostCents          int64
-	// CostMicrocents is the exact cost (1/1,000,000 cent). Nil means whole-cent
-	// evidence only, including journal intents written before exact costs.
-	CostMicrocents       *int64
+	AccountingID         string
+	Accounting           string
+	TokenDetails         json.RawMessage `json:",omitempty"`
+	TeamID               int64
+	UserID               *int64
+	KeyID                *int64
+	CustomerID           *int64
+	CustomerExternalID   string
+	Alias                string
+	DeploymentName       string
+	RequestID            string
+	ModelRequested       string
+	ModelUsed            string
+	PromptTokens         int
+	CompletionTokens     int
+	TotalTokens          int
+	CostCents            int64
+	CostMicrocents       *int64 // exact (1/1,000,000 cent); nil = whole-cent evidence, e.g. pre-upgrade intents
 	LatencyMs            int
 	QueueMs              int // pre-call work (auth, budget check, registry resolve)
 	UpstreamMs           int // upstream HTTP call duration (request → response complete)
@@ -63,6 +61,8 @@ type UsageRow struct {
 	CompletionTokens   int
 	TotalTokens        int
 	CostCents          int64
+	CostMicrocents     int64  // effective exact cost; whole-cent history is cents × 1e6
+	CostPrecision      string // "exact", or "whole_cent" for rows recorded before exact costs
 	LatencyMs          int
 	QueueMs            *int
 	UpstreamMs         *int
@@ -252,6 +252,7 @@ const usageSelect = `
 	       u.cached,
 	       COALESCE(host(u.client_ip), ''),
 	       (p.usage_id IS NOT NULL) AS has_payload, u.token_details, u.accounting_state,
+	       u.cost_microcents,
 	       COUNT(*) OVER () AS total
 	FROM usage_log u
 	JOIN teams t ON t.id = u.team_id
@@ -268,6 +269,7 @@ func scanUsageRow(rows interface {
 	r := &UsageRow{}
 	var total int64
 	var tags []string
+	var exact *int64
 	if err := rows.Scan(
 		&r.ID, &r.TeamSlug, &r.TeamName,
 		&r.Alias, &r.DeploymentName,
@@ -285,11 +287,16 @@ func scanUsageRow(rows interface {
 		&r.Cached,
 		&r.ClientIP,
 		&r.HasPayload, &r.TokenDetails, &r.Accounting,
+		&exact,
 		&total,
 	); err != nil {
 		return nil, 0, err
 	}
 	r.RequestTags = tags
+	r.CostMicrocents, r.CostPrecision = EffectiveMicrocents(r.CostCents, exact), "exact"
+	if exact == nil {
+		r.CostPrecision = "whole_cent"
+	}
 	return r, total, nil
 }
 
