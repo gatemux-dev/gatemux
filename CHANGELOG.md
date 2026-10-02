@@ -34,9 +34,18 @@
 - `gatemux_cost_cents_total` now increments by fractional cents; its name and
   labels are unchanged.
 - The console shows exact amounts such as `$0.00003`; limits stay whole cents.
+- Accessibility: Signup announces loading and errors to screen readers, and
+  form fields link their hints and errors to the control and mark it invalid,
+  visually and for assistive technology.
+- Security hardening found by code scanning: the OIDC sign-in error page uses the
+  standard HTML escaper, and expiring OIDC state cookies use the same `Secure`
+  and `SameSite` policy as setting them.
 
 ### Upgrade notes
 
+- **Back up Postgres before upgrading.** Migrations run automatically when the
+  gateway starts, so with Compose, pulling this repository and restarting
+  upgrades to the pinned release and applies 0041 immediately.
 - Migration `0041_exact_microcents` is forward-only. Run it with inference
   drained and a single migration owner, as for 0039. It adds nullable
   micro-cent columns (existing usage is not rewritten and is reported as
