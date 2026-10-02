@@ -375,7 +375,7 @@ export const api = {
     request<CreateKeyResponse>(`/admin/keys/${id}/rotate`, { method: 'POST', body: graceSeconds > 0 ? JSON.stringify({ grace_seconds: graceSeconds }) : undefined }),
   pauseKey: (id: number) => request<void>(`/admin/keys/${id}/pause`, { method: 'POST' }),
   resumeKey: (id: number) => request<void>(`/admin/keys/${id}/resume`, { method: 'POST' }),
-  getKeyBudget: (id: number) => request<{ limit_cents?: number; period: string; window_start: string; window_end: string; used_cents: number }>(`/admin/keys/${id}/budget`),
+  getKeyBudget: (id: number) => request<{ limit_cents?: number; period: string; window_start: string; window_end: string; used_cents: number; used_microcents: string }>(`/admin/keys/${id}/budget`),
   setKeyBudget: (id: number, usd_limit_cents: number | null) => request<void>(`/admin/keys/${id}/budget`, { method: 'PATCH', body: JSON.stringify({ usd_limit_cents }) }),
   revokeKey: (id: number) =>
     request<void>(`/admin/keys/${id}/revoke`, { method: 'POST' }),
@@ -471,7 +471,7 @@ export const api = {
   setCustomerRegistration: (slug: string, mode: NonNullable<Team['customer_registration']>) =>
     request<Team>(`/admin/teams/${encodeURIComponent(slug)}/customer-policy`, { method: 'PATCH', body: JSON.stringify({ customer_registration: mode }) }),
   getCustomerBudget: (slug: string, externalID: string) =>
-    request<{ used_cents: number; window_start: string; window_end: string; period: string; limit_cents?: number }>(`/admin/teams/${encodeURIComponent(slug)}/customers/${encodeURIComponent(externalID)}/budget`),
+    request<{ used_cents: number; used_microcents: string; window_start: string; window_end: string; period: string; limit_cents?: number }>(`/admin/teams/${encodeURIComponent(slug)}/customers/${encodeURIComponent(externalID)}/budget`),
   setCustomerConcurrency: (slug: string, externalID: string, maxParallelRequests: number | null) =>
     request<Customer>(`/admin/teams/${encodeURIComponent(slug)}/customers/${encodeURIComponent(externalID)}/concurrency`, {
       method: 'PATCH', body: JSON.stringify({ max_parallel_requests: maxParallelRequests }),

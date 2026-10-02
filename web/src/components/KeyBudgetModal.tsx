@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import type { ApiKey } from '../types'
 import { keyBudgetUSD, parseKeyBudgetUSD } from '../lib/keyBudget'
+import { fmtMicrocentsOr, remainingMicrocents } from '../lib/money'
 import KeyBudgetField from './KeyBudgetField'
 import { Button, Modal, ModalFooter } from './ui'
 
@@ -30,7 +31,10 @@ export default function KeyBudgetModal({ apiKey, onClose, onSaved }: { apiKey: A
   return <Modal title="Key budget" description={`${apiKey.name || apiKey.prefix} · Limits apply to future admissions; existing requests can still settle.`} onClose={onClose} dismissible={!busy}>
     <form onSubmit={submit} className="space-y-4">
       {summary ? <>
-        <p role="status">Used or reserved this {summary.period}: ${(summary.used_cents / 100).toFixed(2)}.</p>
+        <p role="status">
+          Used or reserved this {summary.period}: {fmtMicrocentsOr(summary.used_microcents)}.
+          {summary.limit_cents != null && summary.limit_cents > 0 && <> Remaining: {fmtMicrocentsOr(remainingMicrocents(summary.limit_cents, summary.used_microcents))}.</>}
+        </p>
         <p className="muted small">UTC window: {summary.window_start} – {summary.window_end}. Includes reserved estimates and earlier usage, even before a cap was enabled.</p>
         {!apiKey.revoked_at && <KeyBudgetField value={limit} onChange={setLimit} />}
         {apiKey.revoked_at && <p>This key is revoked; its budget is read-only.</p>}

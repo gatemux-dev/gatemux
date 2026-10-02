@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { RefreshCcw } from 'lucide-react'
 import { api, type Page } from '../api/client'
 import { useQuery } from '../lib/useQuery'
-import { fmtUSD } from '../lib/money'
+import { fmtMicrocents, fmtMicrocentsOr, sumMicrocents } from '../lib/money'
 import type { SpendReport, UsageBucket, UsageRow } from '../types'
 import {
   Badge,
@@ -91,9 +91,11 @@ export default function Overview() {
     const requests = buckets.reduce((a, b) => a + b.requests, 0)
     const errors = buckets.reduce((a, b) => a + b.errors, 0)
     const tokens = buckets.reduce((a, b) => a + b.total_tokens, 0)
-    const costCents = buckets.reduce((a, b) => a + b.cost_cents, 0)
+    // Exact micro-cents as BigInt; null renders as Unknown.
+    const cost = sumMicrocents(buckets.map((b) => b.cost_microcents))
+    const wholeCentHistory = buckets.some((b) => b.includes_whole_cent_history)
     const cacheHits = buckets.reduce((a, b) => a + (b.cache_hits ?? 0), 0)
-    return { requests, errors, tokens, costCents, cacheHits }
+    return { requests, errors, tokens, cost, wholeCentHistory, cacheHits }
   }, [buckets])
 
   const topAliases = useMemo(
@@ -104,7 +106,11 @@ export default function Overview() {
   const labels = slots.map((s) => s.label)
   const okSeries = slots.map((s) => Math.max(0, (s.b?.requests ?? 0) - (s.b?.errors ?? 0)))
   const errSeries = slots.map((s) => s.b?.errors ?? 0)
-  const costSeries = slots.map((s) => s.b?.cost_cents ?? 0)
+  // Chart scale in micro-cents; tooltips and ticks format exactly.
+  const costSeries = slots.map((s) => {
+    const n = Number(s.b?.cost_microcents ?? 0)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  })
   const p50Series = slots.map((s) => s.b?.latency_p50_ms ?? 0)
   const p95Series = slots.map((s) => s.b?.latency_p95_ms ?? 0)
 
@@ -149,7 +155,11 @@ export default function Overview() {
           value={loading ? '—' : totals.requests === 0 ? '—' : `${Math.round((totals.cacheHits / totals.requests) * 100)}%`}
           hint={`${fmtCount(totals.cacheHits)} served from cache`}
         />
-        <StatTile label="Spend" value={loading ? '—' : fmtUSD(totals.costCents)} hint="estimated" />
+        <StatTile
+          label="Spend"
+          value={loading ? '—' : fmtMicrocentsOr(totals.cost)}
+          hint={totals.wholeCentHistory ? 'estimated; includes costs recorded before exact costs, rounded up to whole cents' : 'estimated'}
+        />
       </MetricStrip>
 
       <div className="chart-grid">
@@ -181,7 +191,7 @@ export default function Overview() {
           <TrendChart
             labels={labels}
             series={[{ label: 'spend', color: 'var(--chart-1)', values: costSeries }]}
-            valueFmt={(v) => fmtUSD(v)}
+            valueFmt={(v) => fmtMicrocents(BigInt(Math.max(0, Math.round(v))))}
             emptyText={`No cost recorded in the last ${spec.label}.`}
             ariaLabel="Spend over time"
           />
@@ -217,7 +227,7 @@ export default function Overview() {
             rows={topAliases.map((a) => ({
               label: a.alias || '(passthrough)',
               weight: a.requests,
-              values: [`${fmtCount(a.requests)} req`, fmtUSD(a.cost_cents)],
+              values: [`${fmtCount(a.requests)} req`, fmtMicrocentsOr(a.cost_microcents)],
             }))}
           />
         </section>

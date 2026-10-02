@@ -10,7 +10,7 @@ export type Team = {
   allowed_models?: string[]
   capture_payloads?: boolean
   customer_registration?: 'optional' | 'required' | 'auto_create'
-  stats?: { active_keys: number; members: number; period_spend_cents: number }
+  stats?: { active_keys: number; members: number; period_spend_cents: number; period_spend_microcents: string }
 }
 
 export type ApiKey = {
@@ -57,6 +57,9 @@ export type UsageRow = {
   completion_tokens: number
   total_tokens: number
   cost_cents: number
+  // Exact cost in micro-cents (1/1,000,000 cent) as a base-10 string.
+  cost_microcents: string
+  cost_precision: 'exact' | 'whole_cent'
   latency_ms: number
   queue_ms?: number
   upstream_ms?: number
@@ -93,6 +96,7 @@ export type PolicyLayer = {
   label: string
   usd_limit_cents?: number
   spend_so_far_cents: number
+  spend_so_far_microcents: string
   period?: string
   rpm?: number
   tpm?: number
@@ -204,6 +208,8 @@ export type SpendProjection = {
   period_end: string
   spend_so_far_cents: number
   projected_cents: number
+  spend_so_far_microcents: string
+  projected_microcents: string
   limit_cents?: number
   days_to_limit?: number
   on_track: 'above' | 'below' | 'on' | 'unknown'
@@ -422,6 +428,9 @@ export type SpendTotals = {
   completion_tokens: number
   total_tokens: number
   cost_cents: number
+  cost_microcents: string
+  // True when any contributing cost was recorded before exact costs.
+  includes_whole_cent_history: boolean
 }
 
 export type SpendByAlias = SpendTotals & {
@@ -444,6 +453,7 @@ export type SpendBucket = {
   bucket: string // ISO timestamp
   total: SpendTotals
   aliases: Record<string, number>
+  aliases_microcents: Record<string, string>
 }
 
 export type SpendTimeseries = {
@@ -462,6 +472,8 @@ export type UsageBucket = {
   completion_tokens: number
   total_tokens: number
   cost_cents: number
+  cost_microcents: string
+  includes_whole_cent_history: boolean
   latency_p50_ms: number
   latency_p95_ms: number
   cache_hits?: number
@@ -513,6 +525,9 @@ export type MyUsageRow = {
   completion_tokens: number
   total_tokens: number
   cost_cents: number
+  cost_microcents: string
+  cost_precision: 'exact' | 'whole_cent'
+  accounting_state: 'legacy' | 'priced' | 'estimated' | 'unknown' | 'unpriced' | 'not_billable'
   latency_ms: number
   status_code: number
   error?: string
@@ -525,6 +540,7 @@ export type MyBudget = {
   window_start?: string
   window_end?: string
   used_cents: number
+  used_microcents: string
 }
 
 export type LoginResponse = {

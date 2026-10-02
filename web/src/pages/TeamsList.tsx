@@ -4,7 +4,7 @@ import { ChevronRight, Mail, Plus, Search } from 'lucide-react'
 import { api } from '../api/client'
 import { useQuery } from '../lib/useQuery'
 import { useOpenFromUrl } from '../lib/useOpenFromUrl'
-import { fmtUSD } from '../lib/money'
+import { fmtMicrocentsOr, fmtUSD } from '../lib/money'
 import type { Team } from '../types'
 import CreateTeamModal from '../components/CreateTeamModal'
 import {
@@ -143,19 +143,21 @@ export default function TeamsList() {
 // TeamSpend shows spend in the current budget period against the budget,
 // turning amber at 80% and red at the limit.
 function TeamSpend({ team }: { team: Team }) {
-  const spent = team.stats?.period_spend_cents
-  if (spent == null) return <span className="muted">—</span>
+  const spentCents = team.stats?.period_spend_cents
+  if (spentCents == null) return <span className="muted">—</span>
+  // Exact amount for display; the rounded-up cents only drive the bar.
+  const spent = fmtMicrocentsOr(team.stats?.period_spend_microcents)
   const limit = team.usd_limit_cents
   if (limit == null || limit <= 0) {
-    return <span className="tnum">{fmtUSD(spent)} <span className="muted">no budget</span></span>
+    return <span className="tnum">{spent} <span className="muted">no budget</span></span>
   }
-  const ratio = spent / limit
+  const ratio = spentCents / limit
   return (
-    <span className="share" title={`${fmtUSD(spent)} of ${fmtUSD(limit)} this ${team.period}`}>
+    <span className="share" title={`${spent} of ${fmtUSD(limit)} this ${team.period}`}>
       <span className={'share-bar' + (ratio >= 1 ? ' is-over' : ratio >= 0.8 ? ' is-warn' : '')}>
         <span style={{ width: `${Math.min(ratio * 100, 100)}%` }} />
       </span>
-      <span className="tnum">{fmtUSD(spent)} <span className="muted">/ {fmtUSD(limit)}</span></span>
+      <span className="tnum">{spent} <span className="muted">/ {fmtUSD(limit)}</span></span>
     </span>
   )
 }
