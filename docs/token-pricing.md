@@ -29,11 +29,22 @@ context length, batch size, tokenizer and dimensional limits remain upstream rul
 Explicit zero is free, not inheritance. Negative and non-integer rates are rejected.
 The Spend & usage pricing form supports editing all rates and clearing overrides.
 Input totals include reads/writes; output totals include reasoning. The calculator
-partitions these totals into disjoint tiers, sums exact integer products, rounds
-up **once per direction** to whole cents, then adds the two directions. It neither
-adds cached/reasoning counts to inclusive totals nor rounds each tier separately.
-This intentionally preserves legacy whole-cent accounting; it is not fractional
-cent billing and may differ substantially from provider invoices for tiny calls.
+partitions these totals into disjoint tiers and sums exact integer products. It
+never adds cached/reasoning counts to inclusive totals. Because rates are whole
+cents per million tokens, that sum is an exact integer count of **micro-cents**
+(µ¢, 1/1,000,000 cent, $0.00000001), recorded without rounding (migration 0041).
+A small request priced at 10/40 cents per million with 100 input and 50 output
+tokens costs exactly 3,000 µ¢ ($0.00003); before 0041 it was recorded as 2 cents.
+
+Amounts are int64 micro-cents: one request, and any stored total, can be at most
+9,223,372,036,854,775,807 µ¢ (about $92.2 billion). A larger result is an error,
+never a truncated value. Every `*_cents` API, CSV and callback field reports the
+exact amount rounded **up** to whole cents, so a positive cost is never 0 and a
+cents value is never below the exact amount; companion `*_microcents` string
+fields carry the exact value. Rows recorded before 0041 keep their whole-cent
+cost and are marked `whole_cent` ([durable accounting](durable-accounting.md)).
+These costs come from configured rates and reported usage. They are not provider
+invoice reconciliation and may differ from provider invoices.
 
 Admission reserves the highest configured input/output tier across eligible
 fallbacks. Settlement uses actual details. Inconsistent/negative counts or cost

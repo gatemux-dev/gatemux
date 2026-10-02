@@ -13,6 +13,38 @@
 - The Compose quickstart pulls the published image instead of building from
   source (`GATEMUX_VERSION` selects a release); `docker-compose.build.yml`
   keeps the source build for contributors.
+- **Exact sub-cent request costs (behaviour change, COST-003).** Costs are now
+  recorded exactly in micro-cents (1/1,000,000 cent) instead of being rounded up
+  to whole cents per direction. Cents values drop for small requests: 100 input
+  and 50 output tokens at 10/40 cents per million cost $0.00003 instead of 2 cents.
+  Budget admission compares exact spend with whole-cent limits, so sub-cent
+  remainders are usable, and every error path still refuses.
+- Existing `*_cents` fields keep their names and integer types and now report the
+  exact amount rounded up; a positive amount is never 0. New additive fields:
+  `cost_microcents` and `cost_precision` (`exact` or `whole_cent`) on usage rows,
+  `includes_whole_cent_history` and `cost_microcents` on spend totals,
+  aggregates and timeseries (plus `aliases_microcents`), and
+  `spend_so_far_microcents`, `projected_microcents`, `used_microcents`,
+  `period_spend_microcents`, alert `spend_microcents`/`limit_microcents` and
+  callback `cost_microcents`. Micro-cent values are base-10 JSON strings.
+- The usage CSV appends `cost_microcents,cost_precision`; existing columns keep
+  their order.
+- `/me/usage` rows now include `accounting_state`, so My usage shows unknown and
+  unpriced costs as words.
+- `gatemux_cost_cents_total` now increments by fractional cents; its name and
+  labels are unchanged.
+- The console shows exact amounts such as `$0.00003`; limits stay whole cents.
+
+### Upgrade notes
+
+- Migration `0041_exact_microcents` is forward-only. Run it with inference
+  drained and a single migration owner, as for 0039. It adds nullable
+  micro-cent columns (existing usage is not rewritten and is reported as
+  `whole_cent` history) and switches `budget_daily_totals` to micro-cents.
+- After 0041, older binaries fail their budget reads and refuse budgeted
+  requests (fail closed). Do not serve traffic from older binaries after it runs.
+- `0041_exact_microcents.down.sql` exists for manual disaster recovery only; the
+  migration runner never executes it.
 
 ## v0.1.0-alpha — 2026-09-26
 

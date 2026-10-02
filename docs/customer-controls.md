@@ -33,8 +33,13 @@ Redis Cluster is not qualified; production distributed limits require Redis, not
 the bounded in-memory development fallback.
 
 Budgets are integer cents, UTC calendar day/month. Blank is unlimited; zero blocks
-positive-cost work. Ordered advisory locks and reservations prevent simultaneous
-requests from overselling the *estimated* budget. Accepted work settles once with
+positive-cost work, down to a single micro-cent. Admission compares exact
+micro-cent spend and estimates (1/1,000,000 cent) against the whole-cent limit, so
+a sub-cent remainder admits a request that fits and refuses one that does not.
+Limits above about $92.2 billion (MaxInt64 micro-cents) saturate, which is exact
+for every representable amount. Ordered advisory locks and reservations prevent
+simultaneous requests from overselling the *estimated* budget. The customer
+budget summary adds `used_microcents` beside the rounded-up `used_cents`. Accepted work settles once with
 authoritative token pricing. Missing streamed usage conservatively retains the
 estimate, including completed streams that omitted their usage event. Actual
 provider usage can exceed estimates; this is not a guarantee against every
