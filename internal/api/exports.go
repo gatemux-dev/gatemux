@@ -114,11 +114,12 @@ func (h *AdminHandler) GetProjection(w http.ResponseWriter, r *http.Request) {
 		period = "month"
 	}
 	start, end := windowFor(period, time.Now().UTC())
-	spend, err := h.Store.SumTeamSpendInWindow(r.Context(), team.ID, start, end)
+	spendMicrocents, err := h.Store.SumTeamSpendInWindow(r.Context(), team.ID, start, end)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
+	spend := store.CeilCents(spendMicrocents)
 	resp := ProjectionResponse{
 		ScopeType:       "team",
 		ScopeID:         team.ID,

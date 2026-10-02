@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"math"
 	"sort"
 	"time"
 
@@ -37,11 +38,16 @@ type Reservation struct {
 	EstimatedCostMicrocents int64
 }
 
+// ExceededError reports a refused scope. Cents fields are rounded up; the
+// micro-cent fields are exact and internal (never in error bodies).
 type ExceededError struct {
-	Scope      string
-	LimitCents int64
-	UsedCents  int64
-	NeedCents  int64
+	Scope           string
+	LimitCents      int64
+	UsedCents       int64
+	NeedCents       int64
+	LimitMicrocents int64
+	UsedMicrocents  int64
+	NeedMicrocents  int64
 }
 
 func (e *ExceededError) Error() string {
@@ -329,22 +335,30 @@ func nullableKeyID(vk *store.VirtualKey) *int64 {
 	return &v
 }
 
-// scopeExceeded compares spend and the estimate, both in micro-cents, against a
-// whole-cent limit. Interim: compares rounded-up cents, which never over-admits.
+// scopeExceeded compares spend and the estimate, both exact micro-cents,
+// against a whole-cent limit converted (saturating) to micro-cents.
 func scopeExceeded(scope string, limitCents, used, need int64) *ExceededError {
-	if !wouldExceed(reportCents(used), reportCents(need), limitCents) {
+	if limitCents >= 0 && !wouldExceed(used, need, store.LimitMicrocents(limitCents)) {
 		return nil
 	}
-	return &ExceededError{Scope: scope, LimitCents: limitCents, UsedCents: reportCents(used), NeedCents: reportCents(need)}
+	return &ExceededError{Scope: scope, LimitCents: limitCents, UsedCents: reportCents(used), NeedCents: reportCents(need),
+		LimitMicrocents: reportLimit(limitCents), UsedMicrocents: used, NeedMicrocents: need}
 }
 
-// reportCents rounds a micro-cent amount up to cents. Negative values are kept
-// negative (never valid here) so wouldExceed still denies them, without a panic.
+// reportCents rounds a micro-cent amount up to cents. Negative values (never
+// valid; wouldExceed denies them) are reported without a panic.
 func reportCents(microcents int64) int64 {
 	if microcents < 0 {
-		return -store.CeilCents(-microcents)
+		return -store.CeilCents(-max(microcents, -math.MaxInt64))
 	}
 	return store.CeilCents(microcents)
+}
+
+func reportLimit(limitCents int64) int64 {
+	if limitCents < 0 {
+		return limitCents
+	}
+	return store.LimitMicrocents(limitCents)
 }
 
 func wouldExceed(used, need, limit int64) bool {

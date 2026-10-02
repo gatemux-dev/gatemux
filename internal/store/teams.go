@@ -75,54 +75,54 @@ func (s *Store) GetTeamBySlugForJWT(ctx context.Context, slug string) (*Team, *J
 	return team, cfg, nil
 }
 
-// SumTeamSpendInWindow totals cost_cents on usage_log for the given team
-// over [start, end). Used by the projection tile (doc 0009).
+// effectiveSpendSQL sums exact micro-cents, counting whole-cent history as
+// cents × 1e6. A total beyond int64 fails the scan rather than wrapping.
+const effectiveSpendSQL = `SUM(COALESCE(cost_microcents, cost_cents * 1000000))`
+
+// SumTeamSpendInWindow totals effective micro-cents on usage_log for the
+// given team over [start, end). Used by the projection tile (doc 0009).
 func (s *Store) SumTeamSpendInWindow(ctx context.Context, teamID int64, start, end time.Time) (int64, error) {
-	var total *int64
-	err := s.Pool.QueryRow(ctx, `
-		SELECT SUM(cost_cents) FROM usage_log
-		WHERE team_id = $1 AND ts >= $2 AND ts < $3
-	`, teamID, start, end).Scan(&total)
+	total, err := s.sumSpendInWindow(ctx, `team_id`, teamID, start, end)
 	if err != nil {
 		return 0, fmt.Errorf("sum team spend: %w", err)
 	}
-	if total == nil {
-		return 0, nil
-	}
-	return *total, nil
+	return total, nil
 }
 
-// SumUserSpendInWindow totals cost_cents on usage_log for keys owned by
-// the given user (or service account when applicable) over [start, end).
+// SumUserSpendInWindow totals effective micro-cents on usage_log for keys
+// owned by the given user (or service account when applicable) over [start, end).
 func (s *Store) SumUserSpendInWindow(ctx context.Context, userID int64, start, end time.Time) (int64, error) {
-	var total *int64
-	err := s.Pool.QueryRow(ctx, `
-		SELECT SUM(cost_cents) FROM usage_log
-		WHERE user_id = $1 AND ts >= $2 AND ts < $3
-	`, userID, start, end).Scan(&total)
+	total, err := s.sumSpendInWindow(ctx, `user_id`, userID, start, end)
 	if err != nil {
 		return 0, fmt.Errorf("sum user spend: %w", err)
 	}
-	if total == nil {
-		return 0, nil
-	}
-	return *total, nil
+	return total, nil
 }
 
-// SumKeySpendInWindow totals cost_cents on usage_log for the given key
-// over [start, end). Used by the effective-policy endpoint to show
+// SumKeySpendInWindow totals effective micro-cents on usage_log for the given
+// key over [start, end). Used by the effective-policy endpoint to show
 // per-key budget burn alongside team/user windows.
 func (s *Store) SumKeySpendInWindow(ctx context.Context, keyID int64, start, end time.Time) (int64, error) {
-	var total *int64
-	err := s.Pool.QueryRow(ctx, `
-		SELECT SUM(cost_cents) FROM usage_log
-		WHERE key_id = $1 AND ts >= $2 AND ts < $3
-	`, keyID, start, end).Scan(&total)
+	total, err := s.sumSpendInWindow(ctx, `key_id`, keyID, start, end)
 	if err != nil {
 		return 0, fmt.Errorf("sum key spend: %w", err)
 	}
+	return total, nil
+}
+
+// column is one of the fixed identifiers above, never caller input.
+func (s *Store) sumSpendInWindow(ctx context.Context, column string, id int64, start, end time.Time) (int64, error) {
+	var total *int64
+	err := s.Pool.QueryRow(ctx, `SELECT `+effectiveSpendSQL+` FROM usage_log
+		WHERE `+column+` = $1 AND ts >= $2 AND ts < $3`, id, start, end).Scan(&total)
+	if err != nil {
+		return 0, err
+	}
 	if total == nil {
 		return 0, nil
+	}
+	if *total < 0 {
+		return 0, errors.New("negative spend total")
 	}
 	return *total, nil
 }

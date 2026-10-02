@@ -10,7 +10,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/big"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gatemux-dev/gatemux/internal/store"
@@ -187,21 +190,46 @@ func (e *Evaluator) evaluateBudgetThreshold(ctx context.Context, rule *store.Ale
 	if err != nil {
 		return
 	}
-	pct := 100.0 * float64(spend) / float64(*team.UsdLimitCents)
-	if pct < thresholdPct {
+	// Compare exactly: spend_µ¢ × 100 ≥ threshold_pct × limit_µ¢. A float
+	// ratio loses precision at large micro-cent values.
+	limit := store.LimitMicrocents(*team.UsdLimitCents)
+	threshold := new(big.Rat)
+	if threshold.SetFloat64(thresholdPct) == nil {
 		return
 	}
+	lhs := new(big.Rat).SetInt(new(big.Int).Mul(big.NewInt(spend), big.NewInt(100)))
+	if lhs.Cmp(threshold.Mul(threshold, new(big.Rat).SetInt64(limit))) < 0 {
+		return
+	}
+	pct := 100.0 * float64(spend) / float64(limit) // display only
 	payload := map[string]any{
-		"team_slug":     team.Slug,
-		"limit_cents":   *team.UsdLimitCents,
-		"spend_cents":   spend,
-		"threshold_pct": thresholdPct,
-		"actual_pct":    pct,
-		"period":        team.Period,
-		"period_start":  start,
-		"period_end":    end,
+		"team_slug":        team.Slug,
+		"limit_cents":      *team.UsdLimitCents,
+		"spend_cents":      store.CeilCents(spend),
+		"limit_microcents": strconv.FormatInt(limit, 10),
+		"spend_microcents": strconv.FormatInt(spend, 10),
+		"threshold_pct":    thresholdPct,
+		"actual_pct":       pct,
+		"period":           team.Period,
+		"period_start":     start,
+		"period_end":       end,
 	}
 	e.fire(ctx, rule, payload)
+}
+
+// formatMicrocentsUSD renders exact dollars: grouped whole dollars and 2 to 8
+// fraction digits, trailing zeros trimmed after the second (console rule).
+func formatMicrocentsUSD(microcents int64) string {
+	const perDollar = 100 * store.MicrocentsPerCent
+	dollars := strconv.FormatInt(microcents/perDollar, 10)
+	for i := len(dollars) - 3; i > 0; i -= 3 {
+		dollars = dollars[:i] + "," + dollars[i:]
+	}
+	fraction := strings.TrimRight(fmt.Sprintf("%08d", microcents%perDollar), "0")
+	for len(fraction) < 2 {
+		fraction += "0"
+	}
+	return "$" + dollars + "." + fraction
 }
 
 func (e *Evaluator) deliver(ctx context.Context, rule *store.AlertRule, payload map[string]any) string {
@@ -217,11 +245,12 @@ func (e *Evaluator) deliver(ctx context.Context, rule *store.AlertRule, payload 
 func slackText(rule *store.AlertRule, payload map[string]any) string {
 	switch rule.TriggerType {
 	case "budget_threshold":
+		limit, _ := strconv.ParseInt(fmt.Sprint(payload["limit_microcents"]), 10, 64)
+		spend, _ := strconv.ParseInt(fmt.Sprint(payload["spend_microcents"]), 10, 64)
 		return fmt.Sprintf(
-			":warning: Team *%v* has used %.1f%% of its %v budget (limit $%.2f, spent $%.2f)",
+			":warning: Team *%v* has used %.1f%% of its %v budget (limit %s, spent %s)",
 			payload["team_slug"], payload["actual_pct"], payload["period"],
-			float64(payload["limit_cents"].(int64))/100,
-			float64(payload["spend_cents"].(int64))/100,
+			formatMicrocentsUSD(limit), formatMicrocentsUSD(spend),
 		)
 	case "budget_exceeded":
 		return fmt.Sprintf(":rotating_light: Team *%v* has exceeded its %v budget", payload["team_slug"], payload["period"])

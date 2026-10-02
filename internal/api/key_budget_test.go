@@ -188,7 +188,9 @@ func TestKeyBudgetExhaustionFreshEditsAndUnpricedDenialBeforeUpstream(t *testing
 
 func TestKeyBudgetConcurrentReservationsVisibleAndBounded(t *testing.T) {
 	f := newChatFixture(t)
-	f.upsertPricing(100, 0)
+	// Each reservation is 16 max_tokens × 50000 µ¢ = 0.8 cent: one fits the
+	// 1-cent cap, a second never does while the first is in flight.
+	f.upsertPricing(0, 50000)
 	team := f.createTeam("key-budget-race")
 	raw, key := issueBudgetKey(t, f.testEnv, team, 1)
 	started, release := make(chan struct{}), make(chan struct{})

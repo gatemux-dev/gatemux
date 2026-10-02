@@ -79,7 +79,7 @@ func (h *AdminHandler) GetEffectivePolicy(w http.ResponseWriter, r *http.Request
 		Team: PolicyLayer{
 			Label:               "Team " + team.Slug,
 			UsdLimitCents:       team.UsdLimitCents,
-			SpendSoFarCents:     teamSpend,
+			SpendSoFarCents:     store.CeilCents(teamSpend),
 			Period:              team.Period,
 			RPM:                 team.RPM,
 			TPM:                 team.TPM,
@@ -97,7 +97,7 @@ func (h *AdminHandler) GetEffectivePolicy(w http.ResponseWriter, r *http.Request
 		},
 	}
 	keySpend, _ := h.Store.SumKeySpendInWindow(r.Context(), vk.ID, start, end)
-	resp.Key.SpendSoFarCents = keySpend
+	resp.Key.SpendSoFarCents = store.CeilCents(keySpend)
 
 	switch {
 	case vk.UserID != nil:
@@ -111,7 +111,7 @@ func (h *AdminHandler) GetEffectivePolicy(w http.ResponseWriter, r *http.Request
 			resp.Owner = &PolicyLayer{
 				Label:               "User " + label,
 				UsdLimitCents:       u.UsdLimitCents,
-				SpendSoFarCents:     userSpend,
+				SpendSoFarCents:     store.CeilCents(userSpend),
 				Period:              u.Period,
 				MaxParallelRequests: u.MaxParallelRequests,
 			}
