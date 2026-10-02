@@ -12,6 +12,14 @@ It no longer scans every request in the billing period while holding tenant
 advisory locks. Existing multi-scope admission locks, estimates and limits remain
 unchanged. Model-budget reporting is outside this five-scope change.
 
+Since migration `0041_exact_microcents`, totals are kept in `cost_microcents`
+(micro-cents, 1/1,000,000 cent) and the `cost_cents` column is dropped. Each
+charge is its exact amount, or `cents × 1,000,000` for whole-cent history; 0041
+backfilled existing totals that way. Admission compares these exact totals with
+whole-cent limits. 0041 must run with inference drained and a single migration
+owner; afterwards an older binary's budget read fails, so it refuses requests
+rather than reading a stale total.
+
 Migration `0039_budget_daily_totals` backfills the exact previous formula:
 active reservation estimates plus settled reservation costs, plus usage without
 a reservation having the same request ID **and team**. Usage before budget

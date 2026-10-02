@@ -116,7 +116,7 @@ func Specification(r chi.Router) (map[string]any, error) {
 			}
 			if method == "get" {
 				delete(responses, "2XX")
-				responses["200"] = map[string]any{"description": "Current cap, UTC window and used_cents including reserved estimates and settled/earlier usage.", "content": map[string]any{"application/json": map[string]any{"schema": map[string]any{"type": "object", "required": []string{"period", "window_start", "window_end", "used_cents"}, "properties": map[string]any{"limit_cents": map[string]any{"type": "integer"}, "used_cents": map[string]any{"type": "integer"}, "period": map[string]any{"type": "string", "enum": []string{"day", "month"}}, "window_start": map[string]any{"type": "string", "format": "date-time"}, "window_end": map[string]any{"type": "string", "format": "date-time"}}}}}}
+				responses["200"] = map[string]any{"description": "Current cap, UTC window and used_cents including reserved estimates and settled/earlier usage.", "content": map[string]any{"application/json": map[string]any{"schema": map[string]any{"type": "object", "required": []string{"period", "window_start", "window_end", "used_cents"}, "properties": map[string]any{"limit_cents": map[string]any{"type": "integer"}, "used_cents": map[string]any{"type": "integer"}, "used_microcents": map[string]any{"type": "string", "pattern": "^(0|[1-9][0-9]{0,18})$", "description": "Exact used amount in micro-cents (1/1,000,000 cent); used_cents is it rounded up."}, "period": map[string]any{"type": "string", "enum": []string{"day", "month"}}, "window_start": map[string]any{"type": "string", "format": "date-time"}, "window_end": map[string]any{"type": "string", "format": "date-time"}}}}}}
 			}
 		}
 		if route == "/healthz" || route == "/readyz" {

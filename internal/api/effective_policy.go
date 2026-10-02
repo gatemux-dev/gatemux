@@ -34,14 +34,15 @@ type EffectivePolicyResponse struct {
 // PolicyLayer is the per-layer view: limits as configured plus current
 // usage so the UI can render "X of Y used". A nil limit means uncapped.
 type PolicyLayer struct {
-	Label               string   `json:"label"`
-	UsdLimitCents       *int64   `json:"usd_limit_cents,omitempty"`
-	SpendSoFarCents     int64    `json:"spend_so_far_cents"`
-	Period              string   `json:"period,omitempty"`
-	RPM                 *int     `json:"rpm,omitempty"`
-	TPM                 *int     `json:"tpm,omitempty"`
-	MaxParallelRequests *int     `json:"max_parallel_requests,omitempty"`
-	AllowedModels       []string `json:"allowed_models,omitempty"`
+	Label                string   `json:"label"`
+	UsdLimitCents        *int64   `json:"usd_limit_cents,omitempty"`
+	SpendSoFarCents      int64    `json:"spend_so_far_cents"` // ceil of SpendSoFarMicrocents
+	SpendSoFarMicrocents int64    `json:"spend_so_far_microcents,string"`
+	Period               string   `json:"period,omitempty"`
+	RPM                  *int     `json:"rpm,omitempty"`
+	TPM                  *int     `json:"tpm,omitempty"`
+	MaxParallelRequests  *int     `json:"max_parallel_requests,omitempty"`
+	AllowedModels        []string `json:"allowed_models,omitempty"`
 }
 
 // GetEffectivePolicy returns the layered policy view for one key.
@@ -79,7 +80,7 @@ func (h *AdminHandler) GetEffectivePolicy(w http.ResponseWriter, r *http.Request
 		Team: PolicyLayer{
 			Label:               "Team " + team.Slug,
 			UsdLimitCents:       team.UsdLimitCents,
-			SpendSoFarCents:     teamSpend,
+			SpendSoFarCents:     store.CeilCents(teamSpend),
 			Period:              team.Period,
 			RPM:                 team.RPM,
 			TPM:                 team.TPM,
@@ -96,8 +97,9 @@ func (h *AdminHandler) GetEffectivePolicy(w http.ResponseWriter, r *http.Request
 			AllowedModels:       vk.AllowedModels,
 		},
 	}
+	resp.Team.SpendSoFarMicrocents = teamSpend
 	keySpend, _ := h.Store.SumKeySpendInWindow(r.Context(), vk.ID, start, end)
-	resp.Key.SpendSoFarCents = keySpend
+	resp.Key.SpendSoFarCents, resp.Key.SpendSoFarMicrocents = store.CeilCents(keySpend), keySpend
 
 	switch {
 	case vk.UserID != nil:
@@ -111,10 +113,11 @@ func (h *AdminHandler) GetEffectivePolicy(w http.ResponseWriter, r *http.Request
 			resp.Owner = &PolicyLayer{
 				Label:               "User " + label,
 				UsdLimitCents:       u.UsdLimitCents,
-				SpendSoFarCents:     userSpend,
+				SpendSoFarCents:     store.CeilCents(userSpend),
 				Period:              u.Period,
 				MaxParallelRequests: u.MaxParallelRequests,
 			}
+			resp.Owner.SpendSoFarMicrocents = userSpend
 		}
 	case vk.ServiceAccountID != nil:
 		resp.OwnerKind = "service_account"

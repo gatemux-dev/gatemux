@@ -86,6 +86,9 @@ type MyUsageRow struct {
 	CompletionTokens int       `json:"completion_tokens"`
 	TotalTokens      int       `json:"total_tokens"`
 	CostCents        int64     `json:"cost_cents"`
+	CostMicrocents   int64     `json:"cost_microcents,string"`
+	CostPrecision    string    `json:"cost_precision"`
+	AccountingState  string    `json:"accounting_state"`
 	LatencyMs        int       `json:"latency_ms"`
 	StatusCode       int       `json:"status_code"`
 	Error            string    `json:"error,omitempty"`
@@ -110,7 +113,9 @@ func (h *MeHandler) ListUsage(w http.ResponseWriter, r *http.Request) {
 			DeploymentName: row.DeploymentName, ModelUsed: row.ModelUsed,
 			PromptTokens: row.PromptTokens, CompletionTokens: row.CompletionTokens,
 			TotalTokens: row.TotalTokens, CostCents: row.CostCents,
-			LatencyMs: row.LatencyMs, StatusCode: row.StatusCode, Error: row.Error,
+			CostMicrocents: row.CostMicrocents, CostPrecision: row.CostPrecision,
+			AccountingState: row.Accounting,
+			LatencyMs:       row.LatencyMs, StatusCode: row.StatusCode, Error: row.Error,
 			Ts: row.Ts,
 		})
 	}
@@ -119,11 +124,12 @@ func (h *MeHandler) ListUsage(w http.ResponseWriter, r *http.Request) {
 }
 
 type MyBudgetResponse struct {
-	LimitCents  *int64    `json:"limit_cents,omitempty"`
-	Period      string    `json:"period"`
-	WindowStart time.Time `json:"window_start,omitempty"`
-	WindowEnd   time.Time `json:"window_end,omitempty"`
-	UsedCents   int64     `json:"used_cents"`
+	LimitCents     *int64    `json:"limit_cents,omitempty"`
+	Period         string    `json:"period"`
+	WindowStart    time.Time `json:"window_start,omitempty"`
+	WindowEnd      time.Time `json:"window_end,omitempty"`
+	UsedCents      int64     `json:"used_cents"` // ceil of UsedMicrocents
+	UsedMicrocents int64     `json:"used_microcents,string"`
 }
 
 func (h *MeHandler) GetBudget(w http.ResponseWriter, r *http.Request) {
@@ -149,11 +155,12 @@ func (h *MeHandler) GetBudget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, MyBudgetResponse{
-		LimitCents:  summary.LimitCents,
-		Period:      summary.Period,
-		WindowStart: summary.WindowStart,
-		WindowEnd:   summary.WindowEnd,
-		UsedCents:   summary.UsedCents,
+		LimitCents:     summary.LimitCents,
+		Period:         summary.Period,
+		WindowStart:    summary.WindowStart,
+		WindowEnd:      summary.WindowEnd,
+		UsedCents:      summary.UsedCents,
+		UsedMicrocents: summary.UsedMicrocents,
 	})
 }
 

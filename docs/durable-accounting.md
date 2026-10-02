@@ -43,9 +43,23 @@ The journal contains identifiers and attribution, not prompts or responses.
 
 ## Cost evidence
 
-Usage API rows and usage CSV expose `accounting_state`. Requests displays unknown
-and unpriced amounts as words, not `$0`; estimates and request-detail warnings
-remain visible. Spend totals carry a caveat about incomplete and estimated costs.
+Usage API rows (`/admin/usage`, `/admin/usage/{id}`, `/me/usage`) and the usage
+CSV expose `accounting_state`, the exact cost `cost_microcents` (micro-cents,
+1/1,000,000 cent; a base-10 string in JSON) and `cost_precision`. `cost_cents`
+stays the exact amount rounded up to whole cents. The CSV appends
+`cost_microcents,cost_precision` after `accounting_state`; earlier columns keep
+their order. Requests and My usage display unknown and unpriced amounts as words,
+not `$0`; their `cost_microcents` of `"0"` is a placeholder, so clients must use
+`accounting_state`. Estimates and request-detail warnings remain visible. Spend
+totals carry a caveat about incomplete and estimated costs.
+
+`cost_precision` is `exact` for rows recorded from migration 0041 on, and
+`whole_cent` for earlier history, which was rounded up to whole cents per
+direction and is never rewritten. Its effective exact value is `cost_cents ×
+1,000,000`. Spend totals, aggregates and timeseries buckets report
+`includes_whole_cent_history: true` when such a row contributed a positive cost.
+A journal intent written before 0041 and recovered afterwards stays whole-cent
+history, keeping its conservative cents.
 
 | State | Meaning |
 | --- | --- |
@@ -110,8 +124,10 @@ usage/reservations as the bookkeeping source, not callback delivery or counters.
 Completed journal and usage retention/purge remains operator-managed; there is
 no new automatic deletion. Database loss is not protected by an in-database
 journal: backup/restore and storage durability remain deployment responsibilities.
-No provider-invoice import, per-attempt fallback invoice reconciliation, full
-audio/image/tool billing or fractional-cent accounting is claimed. Admission
+No provider-invoice import, per-attempt fallback invoice reconciliation or full
+audio/image/tool billing is claimed. Fractional-cent amounts are exact only to the
+configured whole-cent-per-million rates and reported token counts; history from
+before migration 0041 remains whole-cent. Admission
 estimates are conservative for configured supported token rates, not guaranteed
 upper bounds on every provider's actual charges.
 

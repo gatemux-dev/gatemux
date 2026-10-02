@@ -50,6 +50,10 @@ type Event struct {
 	Cached     bool           `json:"cached,omitempty"`
 	Error      string         `json:"error,omitempty"`
 	Payload    map[string]any `json:"payload,omitempty"`
+
+	// CostMicrocents is the exact cost (1/1,000,000 cent) as a base-10
+	// string; CostCents is it rounded up.
+	CostMicrocents int64 `json:"cost_microcents,string,omitempty"`
 }
 
 type TokenUsage struct {

@@ -500,6 +500,8 @@ func (h *V1Handler) recordDenial(ctx context.Context, team *store.Team, vk *stor
 		StatusCode: statusCode,
 		Error:      errCode,
 		Ts:         time.Now().UTC(),
+		// A denial never reached a provider: an exact zero, not whole-cent history.
+		CostMicrocents: new(int64),
 	}
 	if vk != nil {
 		if vk.ID > 0 {
@@ -1083,7 +1085,7 @@ func (h *V1Handler) recordUsage(
 	tags []string,
 	t Timings,
 ) {
-	costCents := int64(0)
+	costMicrocents := int64(0)
 	accounting := "unknown"
 	pricingCtx, cancelPricing := context.WithTimeout(context.Background(), settlementTimeout)
 	if cached {
@@ -1091,7 +1093,7 @@ func (h *V1Handler) recordUsage(
 	} else if resolved != nil && h.Budget != nil && !t.UnknownUsage {
 		cost, err := h.Budget.ComputeUsageCost(pricingCtx, resolved.ProviderType, resolved.UpstreamModel, u)
 		if err == nil {
-			costCents = cost
+			costMicrocents = cost
 			accounting = "priced"
 		} else {
 			var unpriced *budget.PricingUnavailableError
@@ -1112,7 +1114,7 @@ func (h *V1Handler) recordUsage(
 			if accounting == "unknown" || accounting == "unpriced" {
 				_, _ = h.Budget.SettleEstimated(work, requestID)
 			} else {
-				_ = h.Budget.Settle(work, requestID, costCents)
+				_ = h.Budget.Settle(work, requestID, costMicrocents)
 			}
 		}
 		return
@@ -1155,7 +1157,7 @@ func (h *V1Handler) recordUsage(
 		PromptTokens:         u.PromptTokens,
 		CompletionTokens:     u.CompletionTokens,
 		TotalTokens:          u.TotalTokens,
-		CostCents:            costCents,
+		CostMicrocents:       new(int64),
 		LatencyMs:            latencyMs,
 		QueueMs:              t.QueueMs,
 		UpstreamMs:           t.UpstreamMs,
@@ -1169,12 +1171,14 @@ func (h *V1Handler) recordUsage(
 		ClientIP:             t.ClientIP,
 		ServiceAccountID:     serviceAccountID,
 	}
+	*entry.CostMicrocents = costMicrocents // own copy: the logger may retry this entry
 	attributeCustomer(ctx, &entry)
 	// Usage and budget settlement commit in one transaction. Capture is optional
 	// and attaches only to that committed, idempotent usage row.
 	receipt, persistErr := h.persistUsage(ctx, entry)
+	costCents := store.CeilCents(costMicrocents)
 	if persistErr == nil {
-		costCents = receipt.CostCents
+		costCents, costMicrocents = receipt.CostCents, receipt.CostMicrocents
 	}
 	if persistErr == nil && t.CapturedRequest != nil && team != nil {
 		captureCtx, cancelCapture := context.WithTimeout(context.Background(), settlementTimeout)
@@ -1214,11 +1218,12 @@ func (h *V1Handler) recordUsage(
 				Completion: u.CompletionTokens,
 				Total:      u.TotalTokens,
 			},
-			CostCents:  costCents,
-			LatencyMs:  latencyMs,
-			StatusCode: status,
-			Cached:     cached,
-			Error:      errMsg,
+			CostCents:      costCents,
+			CostMicrocents: costMicrocents,
+			LatencyMs:      latencyMs,
+			StatusCode:     status,
+			Cached:         cached,
+			Error:          errMsg,
 		})
 	}
 	if h.Telemetry != nil {
@@ -1226,7 +1231,7 @@ func (h *V1Handler) recordUsage(
 		if resolved != nil {
 			providerType = resolved.ProviderType
 		}
-		h.Telemetry.RecordInference(alias, providerType, u.PromptTokens, u.CompletionTokens, u.TotalTokens, costCents)
+		h.Telemetry.RecordInference(alias, providerType, u.PromptTokens, u.CompletionTokens, u.TotalTokens, costMicrocents)
 		h.Telemetry.RecordInferenceRequest(alias, providerType, status, time.Since(started))
 	}
 }

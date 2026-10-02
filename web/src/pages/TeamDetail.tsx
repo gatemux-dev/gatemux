@@ -15,7 +15,7 @@ import EditKeyModal from '../components/EditKeyModal'
 import KeyBudgetModal from '../components/KeyBudgetModal'
 import KeyBudgetField from '../components/KeyBudgetField'
 import { keyBudgetUSD, parseKeyBudgetUSD } from '../lib/keyBudget'
-import { fmtUSD } from '../lib/money'
+import { fmtMicrocentsOr, fmtUSD } from '../lib/money'
 import RevealKeyModal from '../components/RevealKeyModal'
 import CreateInviteModal from '../components/CreateInviteModal'
 import RevealInviteModal from '../components/RevealInviteModal'
@@ -1026,7 +1026,7 @@ function PolicyLayerCard({ tone, layer }: { tone: 'team' | 'user' | 'service_acc
         <dt>USD limit</dt>
         <dd>
           {layer.usd_limit_cents != null && layer.usd_limit_cents > 0 ? (
-            <span className="mono">${(layer.spend_so_far_cents / 100).toFixed(2)} / ${(layer.usd_limit_cents / 100).toFixed(2)}</span>
+            <span className="mono">{fmtMicrocentsOr(layer.spend_so_far_microcents)} / {fmtUSD(layer.usd_limit_cents)}</span>
           ) : (
             <span className="muted">no cap</span>
           )}

@@ -58,7 +58,9 @@ func (h *V1Handler) beginAccounting(w http.ResponseWriter, r *http.Request, alia
 		writeJSONError(w, 401, "authentication_error", "team required")
 		return nil, false
 	}
-	e := store.UsageEntry{RequestID: id, TeamID: team.ID, Alias: alias, ModelRequested: alias, Ts: time.Now().UTC()}
+	// An exact zero until priced: an interrupted request recovers as exact zero
+	// or as its reservation estimate, never as whole-cent history.
+	e := store.UsageEntry{RequestID: id, TeamID: team.ID, Alias: alias, ModelRequested: alias, Ts: time.Now().UTC(), CostMicrocents: new(int64)}
 	if nonBillable, _ := ctx.Value(accountingNonBillableKey{}).(bool); nonBillable {
 		e.Accounting = "not_billable"
 	}

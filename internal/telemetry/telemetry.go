@@ -460,7 +460,9 @@ func (c *Collector) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-func (c *Collector) RecordInference(alias, provider string, promptTokens, completionTokens, totalTokens int, costCents int64) {
+// RecordInference takes the exact cost in micro-cents; the cents counter
+// accumulates fractional cents (1 µ¢ = 1e-6 of a cent).
+func (c *Collector) RecordInference(alias, provider string, promptTokens, completionTokens, totalTokens int, costMicrocents int64) {
 	if c == nil {
 		return
 	}
@@ -470,8 +472,8 @@ func (c *Collector) RecordInference(alias, provider string, promptTokens, comple
 	if provider == "" {
 		provider = "unknown"
 	}
-	if costCents > 0 {
-		c.inferenceCost.WithLabelValues(alias, provider).Add(float64(costCents))
+	if costMicrocents > 0 {
+		c.inferenceCost.WithLabelValues(alias, provider).Add(float64(costMicrocents) / 1e6)
 	}
 	c.inferenceTokens.WithLabelValues(alias, "prompt").Add(float64(promptTokens))
 	c.inferenceTokens.WithLabelValues(alias, "completion").Add(float64(completionTokens))

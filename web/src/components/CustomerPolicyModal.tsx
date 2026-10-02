@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '../api/client'
 import type { Customer } from '../types'
+import { fmtMicrocentsOr } from '../lib/money'
 import { Button, Field, Input, Modal, Select } from './ui'
 
 export default function CustomerPolicyModal({ slug, customer, onClose, onSaved }: { slug: string; customer: Customer; onClose: () => void; onSaved: () => void }) {
@@ -11,11 +12,11 @@ export default function CustomerPolicyModal({ slug, customer, onClose, onSaved }
   const [tpm, setTPM] = useState(customer.tpm == null ? '' : String(customer.tpm))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [summary, setSummary] = useState<{ used: number; spend: number; period: string } | null>(null)
+  const [summary, setSummary] = useState<{ used: string; spend: string; period: string } | null>(null)
   useEffect(() => {
     let active = true
     Promise.all([api.getCustomerBudget(slug, customer.external_id), api.getSpendReport({ team: slug, customer: customer.external_id })])
-      .then(([b, s]) => { if (active) setSummary({ used: b.used_cents, spend: s.total.cost_cents, period: b.period }) })
+      .then(([b, s]) => { if (active) setSummary({ used: b.used_microcents, spend: s.total.cost_microcents, period: b.period }) })
       .catch(() => { if (active) setError('Could not load spend and budget usage. You can still edit the policy.') })
     return () => { active = false }
   }, [slug, customer.external_id])
@@ -30,7 +31,7 @@ export default function CustomerPolicyModal({ slug, customer, onClose, onSaved }
   return <Modal title="Customer budget and rates" onClose={onClose}>
     <form onSubmit={submit} className="form-grid">
       <p className="muted">{customer.external_id} · Policies apply across this team’s keys and replicas.</p>
-      {summary && <p className="muted" role="status">Budget used or reserved this {summary.period}: {summary.used}¢. Recorded spend in the last 30 days: {summary.spend}¢.</p>}
+      {summary && <p className="muted" role="status">Budget used or reserved this {summary.period}: {fmtMicrocentsOr(summary.used)}. Recorded spend in the last 30 days: {fmtMicrocentsOr(summary.spend)}.</p>}
       <Field id="customer-policy-name" label="Customer name"><Input id="customer-policy-name" value={name} onChange={e => setName(e.target.value)} /></Field>
       <Field id="customer-budget" label="Budget (cents)" hint="Blank means unlimited. Zero allows no positive-cost generation. Usage is measured in UTC day/month windows."><Input id="customer-budget" type="number" min="0" max="1000000000000" step="1" value={budget} onChange={e => setBudget(e.target.value)} /></Field>
       <Field id="customer-period" label="Budget period"><Select id="customer-period" value={period} onChange={e => setPeriod(e.target.value)}><option value="month">Calendar month (UTC)</option><option value="day">Calendar day (UTC)</option></Select></Field>

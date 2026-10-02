@@ -17,22 +17,24 @@ import (
 
 // Compare every scope/day against the previous admission formula, including
 // zero rows, foreign-team request ID reuse, UTC boundaries and legacy evidence.
+// Charges are effective micro-cents: exact when recorded, else cents × 1e6.
 func assertDailyTotals(t *testing.T, s *store.Store) {
 	t.Helper()
 	var differences int
 	err := s.Pool.QueryRow(context.Background(), `WITH charges AS (
 	 SELECT team_id,user_id,service_account_id,key_id,customer_id,created_at AS ts,
-	 CASE WHEN status='reserved' THEN estimated_cost_cents ELSE settled_cost_cents END AS cost
+	 CASE WHEN status='reserved' THEN COALESCE(estimated_cost_microcents,estimated_cost_cents*1000000)
+	 ELSE COALESCE(settled_cost_microcents,settled_cost_cents*1000000) END AS cost
 	 FROM budget_reservations WHERE status IN ('reserved','settled')
-	 UNION ALL SELECT u.team_id,u.user_id,u.service_account_id,u.key_id,u.customer_id,u.ts,u.cost_cents
+	 UNION ALL SELECT u.team_id,u.user_id,u.service_account_id,u.key_id,u.customer_id,u.ts,COALESCE(u.cost_microcents,u.cost_cents*1000000)
 	 FROM usage_log u WHERE NOT EXISTS (SELECT 1 FROM budget_reservations b WHERE b.request_id=u.request_id AND b.team_id=u.team_id)
 	), expected AS (
-	 SELECT v.scope,v.subject_id,(ts AT TIME ZONE 'UTC')::date AS day,SUM(cost) AS cost_cents
+	 SELECT v.scope,v.subject_id,(ts AT TIME ZONE 'UTC')::date AS day,SUM(cost) AS cost_microcents
 	 FROM charges CROSS JOIN LATERAL (VALUES ('team',team_id),('user',user_id),
 	 ('service_account',service_account_id),('key',key_id),('customer',customer_id)) v(scope,subject_id)
 	 WHERE v.subject_id IS NOT NULL GROUP BY v.scope,v.subject_id,(ts AT TIME ZONE 'UTC')::date
 	) SELECT count(*) FROM expected e FULL JOIN budget_daily_totals a USING(scope,subject_id,day)
-	 WHERE COALESCE(e.cost_cents,0)<>COALESCE(a.cost_cents,0)`).Scan(&differences)
+	 WHERE COALESCE(e.cost_microcents,0)<>COALESCE(a.cost_microcents,0)`).Scan(&differences)
 	if err != nil || differences != 0 {
 		t.Fatalf("daily totals disagree with source ledger: %d %v", differences, err)
 	}
@@ -40,6 +42,7 @@ func assertDailyTotals(t *testing.T, s *store.Store) {
 
 func rollbackDailyMigration(t *testing.T, s *store.Store) {
 	t.Helper()
+	rollbackMigration0041(t, s) // 0041 redefines the 0039 functions and table.
 	down, err := os.ReadFile("../store/migrations/0039_budget_daily_totals.down.sql")
 	if err != nil {
 		t.Fatal(err)
@@ -78,9 +81,9 @@ func TestBudgetDailyMigrationAndHistoryIndependentAdmission(t *testing.T) {
 	}
 	assertDailyTotals(t, s)
 	var rows, usageRows int
-	var cents int64
-	if err := s.Pool.QueryRow(ctx, `SELECT count(*),sum(cost_cents),(SELECT count(*) FROM usage_log) FROM budget_daily_totals`).Scan(&rows, &cents, &usageRows); err != nil || rows != 28 || cents != 100007 || usageRows != 50001 {
-		t.Fatalf("backfill rewrote/duplicated history: rows=%d cost=%d usage=%d err=%v", rows, cents, usageRows, err)
+	var microcents int64
+	if err := s.Pool.QueryRow(ctx, `SELECT count(*),sum(cost_microcents),(SELECT count(*) FROM usage_log) FROM budget_daily_totals`).Scan(&rows, &microcents, &usageRows); err != nil || rows != 28 || microcents != 100007_000000 || usageRows != 50001 {
+		t.Fatalf("backfill rewrote/duplicated history: rows=%d cost=%d usage=%d err=%v", rows, microcents, usageRows, err)
 	}
 	if _, err := s.UpsertPricing(ctx, "openai", "test-model", 1000000, 1000000); err != nil {
 		t.Fatal(err)
@@ -263,9 +266,9 @@ func TestBudgetDailyConcurrentLegacyCorrelation(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertDailyTotals(t, s)
-			var cents int64
-			if err := s.Pool.QueryRow(ctx, `SELECT sum(cost_cents) FROM budget_daily_totals`).Scan(&cents); err != nil || cents != 19 {
-				t.Fatalf("concurrent usage double counted: %d %v", cents, err)
+			var microcents int64
+			if err := s.Pool.QueryRow(ctx, `SELECT sum(cost_microcents) FROM budget_daily_totals`).Scan(&microcents); err != nil || microcents != 19_000000 {
+				t.Fatalf("concurrent usage double counted: %d %v", microcents, err)
 			}
 		})
 	}
@@ -278,12 +281,12 @@ func TestBudgetDailyOverflowRollsBackAllScopes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Pool.Exec(ctx, `INSERT INTO budget_reservations(team_id,alias,request_id,estimated_cost_cents)
-	 VALUES($1,'daily','full',9223372036854775807)`, team); err != nil {
+	if _, err := s.Pool.Exec(ctx, `INSERT INTO budget_reservations(team_id,alias,request_id,estimated_cost_cents,estimated_cost_microcents)
+	 VALUES($1,'daily','full',9223372036855,9223372036854775807)`, team); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Pool.Exec(ctx, `INSERT INTO budget_reservations(team_id,customer_id,alias,request_id,estimated_cost_cents)
-	 VALUES($1,$2,'daily','overflow',1)`, team, customer.ID); err == nil {
+	if _, err := s.Pool.Exec(ctx, `INSERT INTO budget_reservations(team_id,customer_id,alias,request_id,estimated_cost_cents,estimated_cost_microcents)
+	 VALUES($1,$2,'daily','overflow',1,1)`, team, customer.ID); err == nil {
 		t.Fatal("overflow was accepted")
 	}
 	assertDailyTotals(t, s)

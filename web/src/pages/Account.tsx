@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Activity, ChevronRight, KeyRound, Laptop, MessageSquare, Trash2 } from 'lucide-react'
 import { api, ApiError } from '../api/client'
 import { useQuery } from '../lib/useQuery'
+import { fmtMicrocentsOr, fmtUSD, remainingMicrocents } from '../lib/money'
 import type { AuthenticatedUser, SessionRow } from '../types'
 import {
   Badge,
@@ -88,13 +89,13 @@ export default function Account({ user }: { user: AuthenticatedUser }) {
             <div className="flex flex-wrap items-baseline justify-between gap-3">
               <div>
                 <div className="tnum" style={{ fontSize: 28, fontWeight: 600, letterSpacing: '-0.015em' }}>
-                  ${(used / 100).toFixed(2)}
+                  {fmtMicrocentsOr(budget.used_microcents)}
                   <span className="muted" style={{ marginLeft: 6, fontSize: 14, fontWeight: 400 }}>
-                    / ${(limit / 100).toFixed(2)}
+                    / {fmtUSD(limit)}
                   </span>
                 </div>
                 <div className="muted" style={{ marginTop: 2, color: `var(--${tone === 'danger' ? 'danger' : tone === 'warning' ? 'warning' : 'success'}-fg)` }}>
-                  {pct}% of {budget.period} limit used
+                  {pct}% of {budget.period} limit used · {fmtMicrocentsOr(remainingMicrocents(limit, budget.used_microcents))} left
                 </div>
               </div>
               <div className="muted" style={{ textAlign: 'right' }}>

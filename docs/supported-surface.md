@@ -128,8 +128,9 @@ not general availability or a production-scale qualification. See
 
 - Pre-call metadata journal, atomic idempotent usage/settlement, bounded
   replica-safe interruption recovery and fail-closed completion health.
-  Explicit cost evidence in Requests, spend caveats and CSV; missing token usage
-  is not free inference. [Durable accounting](durable-accounting.md) defines
+  Explicit cost evidence in Requests, spend caveats and CSV, including the exact
+  micro-cent cost and a `whole_cent` marker for pre-0041 history; missing token
+  usage is not free inference. [Durable accounting](durable-accounting.md) defines
   upgrade/history, retention, pricing and performance-qualification limits.
 - Transactional daily budget totals avoid per-request history scans for team,
   user, service-account, key and customer admission. Migration 0039 needs a

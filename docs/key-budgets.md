@@ -11,7 +11,9 @@ the control-plane creation/read/edit gap, not every cost or comparison gate.
 - `POST /admin/service-accounts/{id}/keys` accepts the same field; existing
   administrator-only issuance rules remain unchanged.
 - `GET /admin/keys/{id}/budget` returns `limit_cents` when set, `used_cents`,
-  `period`, `window_start` and `window_end`. Admins and owning-team managers only.
+  `used_microcents`, `period`, `window_start` and `window_end`. Admins and
+  owning-team managers only. `used_microcents` is the exact amount in micro-cents
+  (1/1,000,000 cent) as a base-10 string; `used_cents` is it rounded up.
   Usage includes pending reservations, settlements and earlier unreserved usage
   from the same bounded daily aggregate used by admission. Read failure is 503,
   never a fabricated zero balance. Revoked keys remain readable.
@@ -39,6 +41,9 @@ limits are still enforced. The UI parses decimal dollars exactly without roundin
   clearing a cap does not reset usage. Lowering below used/reserved spend denies
   subsequent positive-cost admissions. Already admitted work can still settle
   against its earlier policy snapshot.
+- Admission compares exact micro-cent spend and estimates against the whole-cent
+  cap, so a sub-cent remainder admits only requests that fit it. Caps above about
+  $92.2 billion (MaxInt64 micro-cents) saturate.
 - Positive caps require known prices. Chat, embeddings and supported Responses
   use existing shared reservation/admission and durable settlement. Missing
   pricing denies before upstream IO; exhausted budgets return 403

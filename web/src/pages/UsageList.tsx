@@ -24,6 +24,7 @@ import { api, ApiError, type UsageQuery } from '../api/client'
 import { principalIsAdmin, type Principal } from '../auth'
 import type { ReplayResponse, Team, UsageBucket, UsageFacets, UsagePayload, UsageRow } from '../types'
 import { useQuery } from '../lib/useQuery'
+import { fmtMicrocentsOr, sumMicrocents } from '../lib/money'
 import { useUrlState } from '../lib/useUrlState'
 import {
   Badge,
@@ -147,18 +148,19 @@ export default function UsageList({ principal }: { principal: Principal }) {
   // approximation, labelled as such).
   const windowTotals = useMemo(() => {
     if (!aggregate || aggregate.length === 0) return null
-    let requests = 0, errors = 0, prompt = 0, completion = 0, cost = 0
+    let requests = 0, errors = 0, prompt = 0, completion = 0
     let p50w = 0, p95w = 0
     for (const b of aggregate) {
       requests += b.requests
       errors += b.errors
       prompt += b.prompt_tokens
       completion += b.completion_tokens
-      cost += b.cost_cents
       p50w += b.latency_p50_ms * b.requests
       p95w += b.latency_p95_ms * b.requests
     }
     if (requests === 0) return null
+    // Exact micro-cents, summed as BigInt; null (shown as Unknown) if any is invalid.
+    const cost = sumMicrocents(aggregate.map((b) => b.cost_microcents))
     return {
       requests, errors, errPct: (errors / requests) * 100, prompt, completion, cost,
       p50: Math.round(p50w / requests), p95: Math.round(p95w / requests),
@@ -322,7 +324,7 @@ export default function UsageList({ principal }: { principal: Principal }) {
           value={windowTotals ? compactCount(windowTotals.prompt + windowTotals.completion) : '—'}
           hint={windowTotals ? `${compactCount(windowTotals.prompt)} in, ${compactCount(windowTotals.completion)} out` : `last ${windowSpec.label}`}
         />
-        <StatTile label="Estimated cost" value={windowTotals ? `$${(windowTotals.cost / 100).toFixed(2)}` : '—'} hint={`last ${windowSpec.label}`} />
+        <StatTile label="Estimated cost" value={windowTotals ? fmtMicrocentsOr(windowTotals.cost) : '—'} hint={`last ${windowSpec.label}`} />
       </MetricStrip>
 
       <Table
@@ -873,7 +875,7 @@ function compactCount(n: number): string {
 function accountingCost(row: UsageRow) {
   if (row.accounting_state === 'unknown') return 'Unknown'
   if (row.accounting_state === 'unpriced') return 'Unpriced'
-  return `$${(row.cost_cents / 100).toFixed(4)}`
+  return fmtMicrocentsOr(row.cost_microcents)
 }
 
 function TokensCard({ row }: { row: UsageRow }) {
@@ -895,7 +897,11 @@ function TokensCard({ row }: { row: UsageRow }) {
       <dl className="kv-flat">
         <div><dt>Prompt</dt><dd className="mono tnum">{row.prompt_tokens.toLocaleString()} tok</dd></div>
         <div><dt>Completion</dt><dd className="mono tnum">{row.completion_tokens.toLocaleString()} tok</dd></div>
-        <div><dt>Recorded cost</dt><dd className="mono tnum">{accountingCost(row)}</dd></div>
+        <div>
+          <dt>Recorded cost</dt>
+          <dd className="mono tnum">{accountingCost(row)}</dd>
+          {row.cost_precision === 'whole_cent' && <dd className="muted">Recorded before exact costs (rounded up to whole cents)</dd>}
+        </div>
         <div><dt>Accounting evidence</dt><dd>{row.accounting_state ?? 'legacy'}</dd></div>
         <div><dt>Latency</dt><dd className="mono tnum">{row.latency_ms}ms</dd></div>
       </dl>

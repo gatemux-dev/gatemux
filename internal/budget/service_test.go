@@ -7,19 +7,20 @@ import (
 	"github.com/gatemux-dev/gatemux/internal/store"
 )
 
-func TestEstimateCostCents(t *testing.T) {
+func TestEstimateMicrocents(t *testing.T) {
 	pricing := &store.Pricing{
 		InputPerMillionCents:  150,
 		OutputPerMillionCents: 600,
 	}
-	got := estimateCostCents(pricing, 1_000, 500)
-	if got != 2 {
-		t.Fatalf("estimateCostCents() = %d, want 2", got)
+	// 1,000 × 150 + 500 × 600 µ¢, exact; whole cents per direction made it 2.
+	got := estimateMicrocents(pricing, 1_000, 500)
+	if got != 450_000 {
+		t.Fatalf("estimateMicrocents() = %d, want 450000", got)
 	}
 
-	got = estimateCostCents(pricing, 10_000, 10_000)
+	got = estimateMicrocents(pricing, 10_000, 10_000)
 	if got <= 0 {
-		t.Fatalf("estimateCostCents() = %d, want positive cost", got)
+		t.Fatalf("estimateMicrocents() = %d, want positive cost", got)
 	}
 }
 

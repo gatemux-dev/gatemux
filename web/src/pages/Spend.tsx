@@ -3,7 +3,7 @@ import { RefreshCcw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import { useQuery } from '../lib/useQuery'
-import { fmtUSD } from '../lib/money'
+import { fmtMicrocents, fmtMicrocentsOr, fmtUSD } from '../lib/money'
 import { principalIsAdmin, principalTeamSlug, type Principal } from '../auth'
 import type { SpendProjection, SpendReport, SpendTimeseries, Team, TeamMember } from '../types'
 import {
@@ -106,7 +106,6 @@ export default function Spend({ principal }: { principal: Principal }) {
     [teams],
   )
 
-  const totalCost = spend?.total.cost_cents ?? 0
   const totalRequests = spend?.total.requests ?? 0
   const totalPrompt = spend?.total.prompt_tokens ?? 0
   const totalCompletion = spend?.total.completion_tokens ?? 0
@@ -175,7 +174,7 @@ export default function Spend({ principal }: { principal: Principal }) {
         />
         <StatTile
           label="Estimated cost"
-          value={spend ? fmtUSD(totalCost) : '—'}
+          value={spend ? fmtMicrocentsOr(spend.total.cost_microcents) : '—'}
           hint="Estimate, not a provider invoice"
           tone="accent"
         />
@@ -183,6 +182,7 @@ export default function Spend({ principal }: { principal: Principal }) {
       <p className="muted small">
         Recorded totals include conservative estimates and may exclude unknown or unpriced requests; they are not provider invoices.
         Each request’s accounting evidence is in <Link to="/usage">Logs</Link>.
+        {spend?.total.includes_whole_cent_history && ' Includes costs recorded before exact costs, rounded up to whole cents.'}
       </p>
 
       <div className="chart-row" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
@@ -191,10 +191,10 @@ export default function Spend({ principal }: { principal: Principal }) {
           <DailyBars
             points={(series?.series ?? []).map((b) => ({
               label: shortDay(b.bucket),
-              value: b.total.cost_cents,
-              title: `${shortDay(b.bucket)}: ${fmtUSD(b.total.cost_cents)} · ${b.total.requests.toLocaleString()} requests`,
+              value: microcentsScale(b.total.cost_microcents),
+              title: `${shortDay(b.bucket)}: ${fmtMicrocentsOr(b.total.cost_microcents)} · ${b.total.requests.toLocaleString()} requests`,
             }))}
-            valueFmt={(v) => fmtUSD(v)}
+            valueFmt={axisMicrocents}
             emptyText="No recorded spend in this window."
             ariaLabel="Daily spend"
           />
@@ -252,7 +252,7 @@ function BreakdownTable({ spend, groupBy, options, onGroupBy }: {
     : groupBy === 'alias'
       ? spend.aliases.map((a) => ({ key: a.alias, label: '', ...a }))
       : spend.group_by === groupBy ? (spend.breakdown ?? []).map((g) => ({ ...g, label: g.label ?? '' })) : null
-  const total = spend?.total.cost_cents ?? 0
+  const total = microcentsScale(spend?.total.cost_microcents)
   const column = GROUPS.find((g) => g.value === groupBy)!.column
   return (
     <Table
@@ -283,7 +283,7 @@ function BreakdownTable({ spend, groupBy, options, onGroupBy }: {
         <EmptyRow cols={5}>No spend in the selected window.</EmptyRow>
       ) : (
         rows.map((r) => {
-          const share = total > 0 ? r.cost_cents / total : 0
+          const share = total > 0 ? microcentsScale(r.cost_microcents) / total : 0
           return (
             <Tr key={r.key}>
               <Td>
@@ -295,7 +295,7 @@ function BreakdownTable({ spend, groupBy, options, onGroupBy }: {
               </Td>
               <Td num mono>{r.requests.toLocaleString()}</Td>
               <Td num mono>{(r.prompt_tokens + r.completion_tokens).toLocaleString()}</Td>
-              <Td num mono>{fmtUSD(r.cost_cents)}</Td>
+              <Td num mono>{fmtMicrocentsOr(r.cost_microcents)}</Td>
               <Td>
                 <span className="share" title={`${(share * 100).toFixed(1)}% of cost`}>
                   <span className="share-bar"><span style={{ width: `${Math.max(share * 100, share > 0 ? 1 : 0)}%` }} /></span>
@@ -414,11 +414,13 @@ function ForecastCard({ row }: { row: ForecastRow }) {
         : projection.on_track === 'below'
           ? 'on track'
           : 'pending'
-  const spend = fmtUSD(projection.spend_so_far_cents)
+  const spend = fmtMicrocentsOr(projection.spend_so_far_microcents)
   const limitDollars = fmtUSD(limit)
-  const projected = fmtUSD(projection.projected_cents)
-  const pctUsed = limit > 0 ? Math.min(100, (projection.spend_so_far_cents / limit) * 100) : 0
-  const pctProjected = limit > 0 ? Math.min(120, (projection.projected_cents / limit) * 100) : 0
+  const projected = fmtMicrocentsOr(projection.projected_microcents)
+  // Bar widths only: a float ratio is fine here; the amounts above are exact.
+  const limitMicrocents = limit * 1_000_000
+  const pctUsed = limit > 0 ? Math.min(100, (microcentsScale(projection.spend_so_far_microcents) / limitMicrocents) * 100) : 0
+  const pctProjected = limit > 0 ? Math.min(120, (microcentsScale(projection.projected_microcents) / limitMicrocents) * 100) : 0
   const days = projection.days_to_limit
   // A six-digit day count is noise, not a forecast; past a year we just say so.
   const daysCopy =
@@ -499,4 +501,15 @@ function SkeletonRows({ cols }: { cols: number }) {
       ))}
     </>
   )
+}
+
+// Chart scale only (bar heights, shares): micro-cents as a float. Displayed
+// amounts always format the exact string instead.
+function microcentsScale(value: string | undefined): number {
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
+function axisMicrocents(v: number): string {
+  return fmtMicrocents(BigInt(Math.max(0, Math.round(v))))
 }

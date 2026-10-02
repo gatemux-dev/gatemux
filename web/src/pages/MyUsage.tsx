@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import { Activity, AlertTriangle, CheckCircle2, RefreshCcw } from 'lucide-react'
 import { api } from '../api/client'
 import { useQuery } from '../lib/useQuery'
+import { fmtMicrocentsOr, sumMicrocents } from '../lib/money'
+import type { MyUsageRow } from '../types'
 import {
   Button,
   EmptyRow,
@@ -56,14 +58,15 @@ export default function MyUsage() {
     if (!filtered) return null
     let prompt = 0,
       completion = 0,
-      cost = 0,
       errors = 0
     for (const r of filtered) {
       prompt += r.prompt_tokens
       completion += r.completion_tokens
-      cost += r.cost_cents
       if (r.status_code >= 400) errors++
     }
+    // Exact micro-cents as BigInt; unknown and unpriced rows carry a "0"
+    // placeholder, so they add nothing.
+    const cost = sumMicrocents(filtered.map((r) => r.cost_microcents))
     return { count: filtered.length, prompt, completion, cost, errors }
   }, [filtered])
 
@@ -99,7 +102,7 @@ export default function MyUsage() {
           <StatTile label="Requests" value={totals.count.toLocaleString()} />
           <StatTile label="Prompt tokens" value={totals.prompt.toLocaleString()} />
           <StatTile label="Completion tokens" value={totals.completion.toLocaleString()} />
-          <StatTile label="Estimated cost" value={`$${(totals.cost / 100).toFixed(2)}`} tone="accent" />
+          <StatTile label="Estimated cost" value={fmtMicrocentsOr(totals.cost)} tone="accent" />
           <StatTile
             label="Errors"
             value={totals.errors.toLocaleString()}
@@ -158,7 +161,7 @@ export default function MyUsage() {
                 <Td className="mono muted">{r.deployment_name}</Td>
                 <Td num mono>{r.prompt_tokens.toLocaleString()}</Td>
                 <Td num mono>{r.completion_tokens.toLocaleString()}</Td>
-                <Td num mono>{r.cost_cents > 0 ? `$${(r.cost_cents / 100).toFixed(4)}` : '—'}</Td>
+                <Td num mono>{myUsageCost(r)}</Td>
                 <Td num mono>{r.latency_ms}ms</Td>
                 <Td>
                   <span className={`pill pill-${tone} tnum`}>
@@ -173,4 +176,11 @@ export default function MyUsage() {
       </Table>
     </>
   )
+}
+
+// Unknown and unpriced costs are words, never $0.00 (their amount is a placeholder).
+function myUsageCost(r: MyUsageRow): string {
+  if (r.accounting_state === 'unknown') return 'Unknown'
+  if (r.accounting_state === 'unpriced') return 'Unpriced'
+  return fmtMicrocentsOr(r.cost_microcents)
 }
