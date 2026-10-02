@@ -305,15 +305,16 @@ func TestCustomerUsageAttributionBudgetDenialAndSpend(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if err != nil || cid == nil || *cid != c.ID || external != c.ExternalID || cost != 2 {
+	// 8 input × 100 + 2 output × 200 = 1200 µ¢, reported as 1 whole cent.
+	if err != nil || cid == nil || *cid != c.ID || external != c.ExternalID || cost != 1 {
 		t.Fatalf("attribution %v %q %d %v", cid, external, cost, err)
 	}
 	report, err := f.Store.GetSpendReport(context.Background(), store.SpendFilter{TeamSlug: team.Slug, CustomerExternalID: c.ExternalID})
-	if err != nil || report.Total.CostCents != 2 || report.Total.Requests != 1 {
+	if err != nil || report.Total.CostCents != 1 || report.Total.Requests != 1 {
 		t.Fatalf("customer spend %+v %v", report, err)
 	}
 	summary, err := f.Budget.CustomerSummary(context.Background(), c)
-	if err != nil || summary.UsedCents != 2 {
+	if err != nil || summary.UsedCents != 1 {
 		t.Fatalf("ledger and usage double counted: %+v %v", summary, err)
 	}
 	zero := int64(0)

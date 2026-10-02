@@ -19,7 +19,7 @@ func tierRate(override *int64, fallback int64) int64 {
 // CostUsage partitions authoritative input/output totals into disjoint tiers.
 // OpenAI cached/reasoning detail counts are subsets, never extra tokens.
 // Native adapters must normalize their protocol's totals before calling this.
-// Round once per direction (not per tier), preserving legacy whole-cent billing.
+// Exact: Σ tokens × cents-per-million is an integer count of micro-cents; no rounding.
 func CostUsage(p *store.Pricing, u providers.Usage) (int64, error) {
 	if p == nil {
 		return 0, fmt.Errorf("pricing unavailable")
@@ -53,7 +53,7 @@ func CostUsage(p *store.Pricing, u providers.Usage) (int64, error) {
 	if u.PromptTokens < 0 || u.CompletionTokens < 0 || read < 0 || write < 0 || read > u.PromptTokens || write > u.PromptTokens-read || reasoning < 0 || reasoning > u.CompletionTokens {
 		return 0, fmt.Errorf("token detail counts exceed authoritative totals")
 	}
-	input, err := weightedCents([]tokenTier{
+	input, err := weightedMicrocents([]tokenTier{
 		{u.PromptTokens - read - write, p.InputPerMillionCents},
 		{read, tierRate(p.Tiers.CacheReadPerMillionCents, p.InputPerMillionCents)},
 		{write - write1h, tierRate(p.Tiers.CacheWritePerMillionCents, p.InputPerMillionCents)},
@@ -62,12 +62,12 @@ func CostUsage(p *store.Pricing, u providers.Usage) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	output, err := weightedCents([]tokenTier{{u.CompletionTokens - reasoning, p.OutputPerMillionCents}, {reasoning, tierRate(p.Tiers.ReasoningPerMillionCents, p.OutputPerMillionCents)}})
+	output, err := weightedMicrocents([]tokenTier{{u.CompletionTokens - reasoning, p.OutputPerMillionCents}, {reasoning, tierRate(p.Tiers.ReasoningPerMillionCents, p.OutputPerMillionCents)}})
 	if err != nil {
 		return 0, err
 	}
 	if input > math.MaxInt64-output {
-		return 0, fmt.Errorf("token cost exceeds int64 cents")
+		return 0, fmt.Errorf("token cost exceeds int64 microcents")
 	}
 	return input + output, nil
 }
@@ -77,7 +77,7 @@ type tokenTier struct {
 	rate  int64
 }
 
-func weightedCents(tiers []tokenTier) (int64, error) {
+func weightedMicrocents(tiers []tokenTier) (int64, error) {
 	var sum, product, count, rate big.Int
 	for _, tier := range tiers {
 		if tier.count < 0 || tier.rate < 0 {
@@ -88,13 +88,8 @@ func weightedCents(tiers []tokenTier) (int64, error) {
 		product.Mul(&count, &rate)
 		sum.Add(&sum, &product)
 	}
-	if sum.Sign() == 0 {
-		return 0, nil
-	}
-	sum.Add(&sum, big.NewInt(999999))
-	sum.Quo(&sum, big.NewInt(1000000))
 	if !sum.IsInt64() {
-		return 0, fmt.Errorf("token cost exceeds int64 cents")
+		return 0, fmt.Errorf("token cost exceeds int64 microcents")
 	}
 	return sum.Int64(), nil
 }

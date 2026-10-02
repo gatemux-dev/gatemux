@@ -32,8 +32,9 @@ type AdmissionRequest struct {
 }
 
 type Reservation struct {
-	RequestID          string
-	EstimatedCostCents int64
+	RequestID               string
+	EstimatedCostCents      int64 // ceil of EstimatedCostMicrocents
+	EstimatedCostMicrocents int64
 }
 
 type ExceededError struct {
@@ -125,13 +126,8 @@ func (s *Service) Admit(ctx context.Context, req AdmissionRequest) (*Reservation
 		if err != nil {
 			return nil, err
 		}
-		if wouldExceed(used, estimatedCost, *req.Team.UsdLimitCents) {
-			return nil, &ExceededError{
-				Scope:      "team",
-				LimitCents: *req.Team.UsdLimitCents,
-				UsedCents:  used,
-				NeedCents:  estimatedCost,
-			}
+		if exceeded := scopeExceeded("team", *req.Team.UsdLimitCents, used, estimatedCost); exceeded != nil {
+			return nil, exceeded
 		}
 	}
 	if userBudget {
@@ -140,13 +136,8 @@ func (s *Service) Admit(ctx context.Context, req AdmissionRequest) (*Reservation
 		if err != nil {
 			return nil, err
 		}
-		if wouldExceed(used, estimatedCost, *req.User.UsdLimitCents) {
-			return nil, &ExceededError{
-				Scope:      "user",
-				LimitCents: *req.User.UsdLimitCents,
-				UsedCents:  used,
-				NeedCents:  estimatedCost,
-			}
+		if exceeded := scopeExceeded("user", *req.User.UsdLimitCents, used, estimatedCost); exceeded != nil {
+			return nil, exceeded
 		}
 	}
 	if saBudget {
@@ -155,13 +146,8 @@ func (s *Service) Admit(ctx context.Context, req AdmissionRequest) (*Reservation
 		if err != nil {
 			return nil, err
 		}
-		if wouldExceed(used, estimatedCost, *req.ServiceAccount.UsdLimitCents) {
-			return nil, &ExceededError{
-				Scope:      "service_account",
-				LimitCents: *req.ServiceAccount.UsdLimitCents,
-				UsedCents:  used,
-				NeedCents:  estimatedCost,
-			}
+		if exceeded := scopeExceeded("service_account", *req.ServiceAccount.UsdLimitCents, used, estimatedCost); exceeded != nil {
+			return nil, exceeded
 		}
 	}
 	if keyBudget {
@@ -172,13 +158,8 @@ func (s *Service) Admit(ctx context.Context, req AdmissionRequest) (*Reservation
 		if err != nil {
 			return nil, err
 		}
-		if wouldExceed(used, estimatedCost, *req.Key.ScopedUsdLimitCents) {
-			return nil, &ExceededError{
-				Scope:      "key",
-				LimitCents: *req.Key.ScopedUsdLimitCents,
-				UsedCents:  used,
-				NeedCents:  estimatedCost,
-			}
+		if exceeded := scopeExceeded("key", *req.Key.ScopedUsdLimitCents, used, estimatedCost); exceeded != nil {
+			return nil, exceeded
 		}
 	}
 
@@ -188,8 +169,8 @@ func (s *Service) Admit(ctx context.Context, req AdmissionRequest) (*Reservation
 		if err != nil {
 			return nil, err
 		}
-		if wouldExceed(used, estimatedCost, *req.Customer.UsdLimitCents) {
-			return nil, &ExceededError{Scope: "customer", LimitCents: *req.Customer.UsdLimitCents, UsedCents: used, NeedCents: estimatedCost}
+		if exceeded := scopeExceeded("customer", *req.Customer.UsdLimitCents, used, estimatedCost); exceeded != nil {
+			return nil, exceeded
 		}
 	}
 	var customerID *int64
@@ -197,15 +178,15 @@ func (s *Service) Admit(ctx context.Context, req AdmissionRequest) (*Reservation
 		customerID = &req.Customer.ID
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO budget_reservations (request_id, team_id, user_id, service_account_id, key_id, alias, estimated_cost_cents, settled_cost_cents, status, customer_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 'reserved', $8)
-	`, req.RequestID, req.Team.ID, nullableUserID(req.User), nullableServiceAccountID(req.ServiceAccount), nullableKeyID(req.Key), req.Alias, estimatedCost, customerID); err != nil {
+		INSERT INTO budget_reservations (request_id, team_id, user_id, service_account_id, key_id, alias, estimated_cost_cents, estimated_cost_microcents, settled_cost_cents, status, customer_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 'reserved', $9)
+	`, req.RequestID, req.Team.ID, nullableUserID(req.User), nullableServiceAccountID(req.ServiceAccount), nullableKeyID(req.Key), req.Alias, store.CeilCents(estimatedCost), estimatedCost, customerID); err != nil {
 		return nil, fmt.Errorf("insert budget reservation: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	return &Reservation{RequestID: req.RequestID, EstimatedCostCents: estimatedCost}, nil
+	return &Reservation{RequestID: req.RequestID, EstimatedCostCents: store.CeilCents(estimatedCost), EstimatedCostMicrocents: estimatedCost}, nil
 }
 
 func (s *Service) ComputeActualCost(ctx context.Context, providerType, upstreamModel string, promptTokens, completionTokens int) (int64, error) {
@@ -290,7 +271,7 @@ func (s *Service) maxEstimatedCost(ctx context.Context, promptTokens, completion
 	return maxCost, nil
 }
 
-func estimateCostCents(pricing *store.Pricing, promptTokens, completionTokens int) int64 {
+func estimateMicrocents(pricing *store.Pricing, promptTokens, completionTokens int) int64 {
 	if pricing == nil {
 		return 0
 	}
@@ -344,6 +325,24 @@ func nullableKeyID(vk *store.VirtualKey) *int64 {
 	return &v
 }
 
+// scopeExceeded compares spend and the estimate, both in micro-cents, against a
+// whole-cent limit. Interim: compares rounded-up cents, which never over-admits.
+func scopeExceeded(scope string, limitCents, used, need int64) *ExceededError {
+	if !wouldExceed(reportCents(used), reportCents(need), limitCents) {
+		return nil
+	}
+	return &ExceededError{Scope: scope, LimitCents: limitCents, UsedCents: reportCents(used), NeedCents: reportCents(need)}
+}
+
+// reportCents rounds a micro-cent amount up to cents. Negative values are kept
+// negative (never valid here) so wouldExceed still denies them, without a panic.
+func reportCents(microcents int64) int64 {
+	if microcents < 0 {
+		return -store.CeilCents(-microcents)
+	}
+	return store.CeilCents(microcents)
+}
+
 func wouldExceed(used, need, limit int64) bool {
 	return used < 0 || need < 0 || limit < 0 || used > limit || need > limit-used
 }
@@ -362,7 +361,7 @@ func budgetUsedForCustomer(ctx context.Context, tx customerBudgetReader, custome
 	return budgetUsedForScope(ctx, tx, "customer_id", customerID, from, to)
 }
 
-// Transactional daily totals include usage before budget activation and count
+// Returns micro-cents. Transactional daily totals include usage before budget activation and count
 // matching reservations once, including active conservative estimates. A day
 // window reads at most one row; a month reads at most 31, independent of traffic.
 // The column is selected only from this closed internal set, never from input.
@@ -374,7 +373,7 @@ func budgetUsedForScope(ctx context.Context, tx customerBudgetReader, column str
 	}
 	var used int64
 	scope := column[:len(column)-3] // closed set above; remove "_id"
-	err := tx.QueryRow(ctx, `SELECT COALESCE(SUM(cost_cents),0) FROM budget_daily_totals
+	err := tx.QueryRow(ctx, `SELECT COALESCE(SUM(cost_microcents),0) FROM budget_daily_totals
 		WHERE scope=$1 AND subject_id=$2 AND day >= ($3::timestamptz AT TIME ZONE 'UTC')::date
 		AND day < ($4::timestamptz AT TIME ZONE 'UTC')::date`, scope, id, from, to).Scan(&used)
 	return used, err
@@ -386,7 +385,7 @@ func (s *Service) CustomerSummary(ctx context.Context, c *store.Customer) (*User
 	if err != nil {
 		return nil, err
 	}
-	return &UserSummary{LimitCents: c.UsdLimitCents, Period: c.Period, WindowStart: start, WindowEnd: end, UsedCents: used}, nil
+	return &UserSummary{LimitCents: c.UsdLimitCents, Period: c.Period, WindowStart: start, WindowEnd: end, UsedCents: store.CeilCents(used), UsedMicrocents: used}, nil
 }
 
 // KeySummary uses the same UTC team window and aggregate as admission, including
@@ -404,7 +403,7 @@ func (s *Service) KeySummary(ctx context.Context, key *store.VirtualKey, team *s
 	if err != nil {
 		return nil, err
 	}
-	return &UserSummary{LimitCents: key.ScopedUsdLimitCents, Period: period, WindowStart: start, WindowEnd: end, UsedCents: used}, nil
+	return &UserSummary{LimitCents: key.ScopedUsdLimitCents, Period: period, WindowStart: start, WindowEnd: end, UsedCents: store.CeilCents(used), UsedMicrocents: used}, nil
 }
 
 func teamLockKey(teamID int64) int64 {
@@ -423,7 +422,7 @@ func keyLockKey(keyID int64) int64 {
 	return int64(h.Sum64())
 }
 
-// budgetUsedForKey is the sum of reserved + settled cents on this key's
+// budgetUsedForKey is the sum of reserved + settled micro-cents on this key's
 // reservations within the window. Mirrors the team/user variants — reads
 // from budget_reservations so concurrent admissions see each other's
 // in-flight reservations and can't both pass against an empty bucket.
@@ -437,11 +436,12 @@ func budgetUsedForKey(ctx context.Context, tx customerBudgetReader, keyID int64,
 // "used" figure mirrors the value the admission check compares against,
 // so the dashboard agrees with what would actually be denied.
 type UserSummary struct {
-	LimitCents  *int64    `json:"limit_cents,omitempty"`
-	Period      string    `json:"period"`
-	WindowStart time.Time `json:"window_start"`
-	WindowEnd   time.Time `json:"window_end"`
-	UsedCents   int64     `json:"used_cents"`
+	LimitCents     *int64    `json:"limit_cents,omitempty"`
+	Period         string    `json:"period"`
+	WindowStart    time.Time `json:"window_start"`
+	WindowEnd      time.Time `json:"window_end"`
+	UsedCents      int64     `json:"used_cents"` // ceil of UsedMicrocents
+	UsedMicrocents int64     `json:"used_microcents,string"`
 }
 
 func (s *Service) UserSummary(ctx context.Context, user *store.User) (*UserSummary, error) {
@@ -458,11 +458,12 @@ func (s *Service) UserSummary(ctx context.Context, user *store.User) (*UserSumma
 		return nil, fmt.Errorf("sum user budget usage: %w", err)
 	}
 	return &UserSummary{
-		LimitCents:  user.UsdLimitCents,
-		Period:      period,
-		WindowStart: start,
-		WindowEnd:   end,
-		UsedCents:   used,
+		LimitCents:     user.UsdLimitCents,
+		Period:         period,
+		WindowStart:    start,
+		WindowEnd:      end,
+		UsedCents:      store.CeilCents(used),
+		UsedMicrocents: used,
 	}, nil
 }
 

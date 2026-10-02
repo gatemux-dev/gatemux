@@ -1091,7 +1091,7 @@ func (h *V1Handler) recordUsage(
 	} else if resolved != nil && h.Budget != nil && !t.UnknownUsage {
 		cost, err := h.Budget.ComputeUsageCost(pricingCtx, resolved.ProviderType, resolved.UpstreamModel, u)
 		if err == nil {
-			costCents = cost
+			costCents = store.CeilCents(cost) // interim: µ¢ settle lands with US1
 			accounting = "priced"
 		} else {
 			var unpriced *budget.PricingUnavailableError
