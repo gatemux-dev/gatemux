@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -98,8 +99,8 @@ func (h *OIDCHandler) Start(w http.ResponseWriter, r *http.Request) {
 	}
 	h.setShortCookie(w, r, oidcStateCookie, state)
 	h.setShortCookie(w, r, oidcNonceCookie, nonce)
-	clearShortCookie(w, "aiport_oidc_state")
-	clearShortCookie(w, "aiport_oidc_nonce")
+	h.clearShortCookie(w, r, "aiport_oidc_state")
+	h.clearShortCookie(w, r, "aiport_oidc_nonce")
 	http.Redirect(w, r, h.oauth.AuthCodeURL(state, oidc.Nonce(nonce)), http.StatusFound)
 }
 
@@ -126,10 +127,10 @@ func (h *OIDCHandler) Callback(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, "missing oidc nonce")
 		return
 	}
-	clearShortCookie(w, oidcStateCookie)
-	clearShortCookie(w, oidcNonceCookie)
-	clearShortCookie(w, "aiport_oidc_state")
-	clearShortCookie(w, "aiport_oidc_nonce")
+	h.clearShortCookie(w, r, oidcStateCookie)
+	h.clearShortCookie(w, r, oidcNonceCookie)
+	h.clearShortCookie(w, r, "aiport_oidc_state")
+	h.clearShortCookie(w, r, "aiport_oidc_nonce")
 
 	if errMsg := r.URL.Query().Get("error"); errMsg != "" {
 		h.fail(w, r, "idp error: "+errMsg)
@@ -304,17 +305,17 @@ func (h *OIDCHandler) fail(w http.ResponseWriter, r *http.Request, msg string) {
 	if h.Logger != nil {
 		h.Logger.Warn("oidc callback failed", "msg", msg, "remote_ip", auth.ClientIP(r))
 	}
-	clearShortCookie(w, oidcStateCookie)
-	clearShortCookie(w, oidcNonceCookie)
-	clearShortCookie(w, "aiport_oidc_state")
-	clearShortCookie(w, "aiport_oidc_nonce")
+	h.clearShortCookie(w, r, oidcStateCookie)
+	h.clearShortCookie(w, r, oidcNonceCookie)
+	h.clearShortCookie(w, r, "aiport_oidc_state")
+	h.clearShortCookie(w, r, "aiport_oidc_nonce")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusUnauthorized)
 	_, _ = fmt.Fprintf(w, `<!doctype html><html><body style="font-family:system-ui;max-width:480px;margin:64px auto;padding:24px;line-height:1.45">
 <h1 style="font-size:18px">Sign-in failed</h1>
 <p>%s</p>
 <p><a href="/">Back to sign in</a></p>
-</body></html>`, htmlEscape(msg))
+</body></html>`, html.EscapeString(msg))
 }
 
 func (h *OIDCHandler) setShortCookie(w http.ResponseWriter, r *http.Request, name, value string) {
@@ -331,12 +332,16 @@ func (h *OIDCHandler) setShortCookie(w http.ResponseWriter, r *http.Request, nam
 	})
 }
 
-func clearShortCookie(w http.ResponseWriter, name string) {
+// clearShortCookie expires a cookie set by setShortCookie. It uses the same
+// Secure rule so browsers match and replace the original cookie.
+func (h *OIDCHandler) clearShortCookie(w http.ResponseWriter, r *http.Request, name string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   h.SecureCookies || r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
 }
@@ -375,16 +380,6 @@ func firstNonEmpty(values ...string) string {
 
 // htmlEscape is the minimal escaper for fail()'s message — html/template
 // would be overkill for one string. Keeps imports tight.
-func htmlEscape(s string) string {
-	r := strings.NewReplacer(
-		"&", "&amp;",
-		"<", "&lt;",
-		">", "&gt;",
-		`"`, "&quot;",
-		"'", "&#39;",
-	)
-	return r.Replace(s)
-}
 
 // Loosely-typed claims dump for /auth/oidc/debug — useful for verifying
 // what the IdP is actually sending while writing role_map. Disabled in
