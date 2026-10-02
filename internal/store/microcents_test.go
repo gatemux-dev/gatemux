@@ -39,3 +39,19 @@ func TestMicrocentsRejectNegative(t *testing.T) {
 		}()
 	}
 }
+
+func TestEffectiveMicrocents(t *testing.T) {
+	exact := int64(3000)
+	for _, tc := range []struct {
+		cents int64
+		exact *int64
+		want  int64
+	}{
+		{1, &exact, 3000}, {2, nil, 2000000}, {0, nil, 0},
+		{math.MaxInt64, nil, math.MaxInt64}, {-1, nil, -1000000}, {math.MinInt64, nil, math.MinInt64},
+	} {
+		if got := EffectiveMicrocents(tc.cents, tc.exact); got != tc.want {
+			t.Fatalf("EffectiveMicrocents(%d,%v)=%d want %d", tc.cents, tc.exact, got, tc.want)
+		}
+	}
+}

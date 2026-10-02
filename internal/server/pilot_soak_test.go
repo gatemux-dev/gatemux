@@ -188,17 +188,18 @@ func collectSoakAudit(t *testing.T, s *Server, st *store.Store, calls int64) soa
 	// Independent source-ledger oracle: never let faster admission hide drift.
 	err = st.Pool.QueryRow(ctx, `WITH charges AS (
 	 SELECT team_id,user_id,service_account_id,key_id,customer_id,created_at AS ts,
-	 CASE WHEN status='reserved' THEN estimated_cost_cents ELSE settled_cost_cents END AS cost
+	 CASE WHEN status='reserved' THEN COALESCE(estimated_cost_microcents,estimated_cost_cents*1000000)
+	 ELSE COALESCE(settled_cost_microcents,settled_cost_cents*1000000) END AS cost
 	 FROM budget_reservations WHERE status IN ('reserved','settled')
-	 UNION ALL SELECT u.team_id,u.user_id,u.service_account_id,u.key_id,u.customer_id,u.ts,u.cost_cents
+	 UNION ALL SELECT u.team_id,u.user_id,u.service_account_id,u.key_id,u.customer_id,u.ts,COALESCE(u.cost_microcents,u.cost_cents*1000000)
 	 FROM usage_log u WHERE NOT EXISTS (SELECT 1 FROM budget_reservations b WHERE b.request_id=u.request_id AND b.team_id=u.team_id)
 	), expected AS (
-	 SELECT v.scope,v.subject_id,(ts AT TIME ZONE 'UTC')::date AS day,SUM(cost) AS cost_cents
+	 SELECT v.scope,v.subject_id,(ts AT TIME ZONE 'UTC')::date AS day,SUM(cost) AS cost_microcents
 	 FROM charges CROSS JOIN LATERAL (VALUES ('team',team_id),('user',user_id),
 	 ('service_account',service_account_id),('key',key_id),('customer',customer_id)) v(scope,subject_id)
 	 WHERE v.subject_id IS NOT NULL GROUP BY v.scope,v.subject_id,(ts AT TIME ZONE 'UTC')::date
 	) SELECT count(*) FROM expected e FULL JOIN budget_daily_totals a USING(scope,subject_id,day)
-	 WHERE COALESCE(e.cost_cents,0)<>COALESCE(a.cost_cents,0)`).Scan(&a.BudgetDrift)
+	 WHERE COALESCE(e.cost_microcents,0)<>COALESCE(a.cost_microcents,0)`).Scan(&a.BudgetDrift)
 	if err != nil {
 		t.Fatal(err)
 	}

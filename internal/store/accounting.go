@@ -15,7 +15,9 @@ var ErrAccountingConflict = errors.New("request ID already used")
 
 type UsageReceipt struct {
 	ID, CostCents int64
-	Accounting    string
+	// CostMicrocents is the effective exact cost: whole-cent history × 1e6.
+	CostMicrocents int64
+	Accounting     string
 }
 
 // BeginAccounting must commit before any upstream call. The persisted deadline
@@ -76,6 +78,9 @@ func (s *Store) FinalizeUsage(ctx context.Context, e UsageEntry) (UsageReceipt, 
 		// callers retain independent inserts, even when a client reuses another
 		// request's correlation ID. Only the admitted request owns its journal.
 		e.Accounting = classifyAccounting(e)
+		if err := normalizeCost(&e); err != nil {
+			return UsageReceipt{}, err
+		}
 		id, err := insertUsage(ctx, tx, e)
 		if err != nil {
 			return UsageReceipt{}, err
@@ -83,7 +88,7 @@ func (s *Store) FinalizeUsage(ctx context.Context, e UsageEntry) (UsageReceipt, 
 		if err = tx.Commit(ctx); err != nil {
 			return UsageReceipt{}, err
 		}
-		return UsageReceipt{id, e.CostCents, e.Accounting}, nil
+		return UsageReceipt{id, e.CostCents, EffectiveMicrocents(e.CostCents, e.CostMicrocents), e.Accounting}, nil
 	}
 	err = tx.QueryRow(ctx, `SELECT request_id,entry,upstream_started,usage_id,state FROM inference_journal WHERE request_id=$1 FOR UPDATE`, e.AccountingID).Scan(&j.requestID, &j.raw, &j.started, &j.usageID, &j.state)
 	if err != nil {
@@ -106,13 +111,24 @@ func classifyAccounting(e UsageEntry) string {
 	if strings.Contains(string(e.TokenDetails), `"unpriced_`) {
 		return "unpriced"
 	}
-	if e.Cached || e.StatusCode >= 400 && e.CostCents == 0 {
+	if e.Cached || e.StatusCode >= 400 && e.CostCents == 0 && (e.CostMicrocents == nil || *e.CostMicrocents == 0) {
 		return "not_billable"
 	}
-	if e.CostCents > 0 {
+	if e.CostCents > 0 || e.CostMicrocents != nil && *e.CostMicrocents > 0 {
 		return "priced"
 	}
 	return "unknown"
+}
+
+// normalizeCost derives whole cents from an exact cost, so both columns agree.
+func normalizeCost(e *UsageEntry) error {
+	if e.CostCents < 0 || e.CostMicrocents != nil && *e.CostMicrocents < 0 {
+		return errors.New("negative accounting cost")
+	}
+	if e.CostMicrocents != nil {
+		e.CostCents = CeilCents(*e.CostMicrocents)
+	}
+	return nil
 }
 
 func finalizeJournal(ctx context.Context, tx pgx.Tx, j journalRecord, e UsageEntry, recovering bool) (UsageReceipt, error) {
@@ -128,7 +144,11 @@ func finalizeJournal(ctx context.Context, tx pgx.Tx, j journalRecord, e UsageEnt
 		if j.usageID == nil {
 			return receipt, errors.New("completed accounting entry was removed")
 		}
-		err := tx.QueryRow(ctx, `SELECT id,cost_cents,accounting_state FROM usage_log WHERE id=$1`, *j.usageID).Scan(&receipt.ID, &receipt.CostCents, &receipt.Accounting)
+		var exact *int64
+		err := tx.QueryRow(ctx, `SELECT id,cost_cents,cost_microcents,accounting_state FROM usage_log WHERE id=$1`, *j.usageID).Scan(&receipt.ID, &receipt.CostCents, &exact, &receipt.Accounting)
+		if err == nil {
+			receipt.CostMicrocents = EffectiveMicrocents(receipt.CostCents, exact)
+		}
 		return receipt, err
 	}
 	if recovering {
@@ -157,35 +177,39 @@ func finalizeJournal(ctx context.Context, tx pgx.Tx, j journalRecord, e UsageEnt
 	e.Ts = base.Ts
 	e.Accounting = classifyAccounting(e)
 	if !j.started {
-		e.CostCents = 0
+		e.CostCents, e.CostMicrocents = 0, new(int64)
 		e.Accounting = "not_billable"
 	}
+	if err := normalizeCost(&e); err != nil {
+		return UsageReceipt{}, err
+	}
 	// A reservation is independent durable evidence of possible spending. Never
-	// silently refund it when authoritative usage cannot be recovered.
+	// silently refund it when authoritative usage cannot be recovered. A NULL
+	// micro-cent column is whole-cent history and is carried over as such.
 	var estimated, settled int64
+	var estimatedExact, settledExact *int64
 	var status string
-	err := tx.QueryRow(ctx, `SELECT estimated_cost_cents,settled_cost_cents,status FROM budget_reservations WHERE request_id=$1 FOR UPDATE`, j.requestID).Scan(&estimated, &settled, &status)
+	err := tx.QueryRow(ctx, `SELECT estimated_cost_cents,estimated_cost_microcents,settled_cost_cents,settled_cost_microcents,status
+		FROM budget_reservations WHERE request_id=$1 FOR UPDATE`, j.requestID).Scan(&estimated, &estimatedExact, &settled, &settledExact, &status)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return UsageReceipt{}, err
 	}
 	if err == nil {
 		if status == "settled" {
-			if e.CostCents != settled || e.Accounting == "unknown" {
+			if EffectiveMicrocents(e.CostCents, e.CostMicrocents) != EffectiveMicrocents(settled, settledExact) || e.Accounting == "unknown" {
 				e.Accounting = "estimated"
 			}
-			e.CostCents = settled
+			e.CostCents, e.CostMicrocents = settled, settledExact
 		} else {
 			if j.started && (e.Accounting == "unknown" || e.Accounting == "estimated" || e.Accounting == "unpriced") {
-				e.CostCents = estimated
+				e.CostCents, e.CostMicrocents = estimated, estimatedExact
 				e.Accounting = "estimated"
 			}
-			if _, err = tx.Exec(ctx, `UPDATE budget_reservations SET settled_cost_cents=$2,status='settled',settled_at=NOW() WHERE request_id=$1 AND status='reserved'`, j.requestID, e.CostCents); err != nil {
+			if _, err = tx.Exec(ctx, `UPDATE budget_reservations SET settled_cost_cents=$2,settled_cost_microcents=$3,status='settled',settled_at=NOW()
+				WHERE request_id=$1 AND status='reserved'`, j.requestID, e.CostCents, e.CostMicrocents); err != nil {
 				return UsageReceipt{}, err
 			}
 		}
-	}
-	if e.CostCents < 0 {
-		return UsageReceipt{}, errors.New("negative accounting cost")
 	}
 	id, err := insertUsage(ctx, tx, e)
 	if err != nil {
@@ -194,7 +218,7 @@ func finalizeJournal(ctx context.Context, tx pgx.Tx, j journalRecord, e UsageEnt
 	if _, err = tx.Exec(ctx, `UPDATE inference_journal SET state='complete',usage_id=$2,completed_at=NOW() WHERE request_id=$1`, j.requestID, id); err != nil {
 		return UsageReceipt{}, err
 	}
-	return UsageReceipt{id, e.CostCents, e.Accounting}, nil
+	return UsageReceipt{id, e.CostCents, EffectiveMicrocents(e.CostCents, e.CostMicrocents), e.Accounting}, nil
 }
 
 // ReconcileAccounting is replica-safe and bounded to 64 intents per transaction.

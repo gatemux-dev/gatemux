@@ -30,3 +30,18 @@ func LimitMicrocents(limitCents int64) int64 {
 	}
 	return limitCents * MicrocentsPerCent
 }
+
+// EffectiveMicrocents is an amount's exact value, or its whole-cent history
+// value × 1e6 when no exact value was recorded. It saturates instead of
+// wrapping and never panics: it reads stored values, which are not validated.
+func EffectiveMicrocents(cents int64, exact *int64) int64 {
+	switch {
+	case exact != nil:
+		return *exact
+	case cents < -math.MaxInt64/MicrocentsPerCent:
+		return math.MinInt64
+	case cents > math.MaxInt64/MicrocentsPerCent:
+		return math.MaxInt64
+	}
+	return cents * MicrocentsPerCent
+}

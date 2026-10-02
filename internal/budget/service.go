@@ -189,10 +189,12 @@ func (s *Service) Admit(ctx context.Context, req AdmissionRequest) (*Reservation
 	return &Reservation{RequestID: req.RequestID, EstimatedCostCents: store.CeilCents(estimatedCost), EstimatedCostMicrocents: estimatedCost}, nil
 }
 
+// ComputeActualCost returns the exact cost in micro-cents.
 func (s *Service) ComputeActualCost(ctx context.Context, providerType, upstreamModel string, promptTokens, completionTokens int) (int64, error) {
 	return s.ComputeUsageCost(ctx, providerType, upstreamModel, providers.Usage{PromptTokens: promptTokens, CompletionTokens: completionTokens})
 }
 
+// ComputeUsageCost returns the exact cost in micro-cents (1/1,000,000 cent).
 func (s *Service) ComputeUsageCost(ctx context.Context, providerType, upstreamModel string, usage providers.Usage) (int64, error) {
 	if s == nil || s.Store == nil || providerType == "" || upstreamModel == "" {
 		return 0, nil
@@ -207,8 +209,10 @@ func (s *Service) ComputeUsageCost(ctx context.Context, providerType, upstreamMo
 	return CostUsage(pricing, usage)
 }
 
-func (s *Service) Settle(ctx context.Context, requestID string, costCents int64) error {
-	if costCents < 0 {
+// Settle records a reservation's actual cost in micro-cents, with whole cents
+// rounded up beside it.
+func (s *Service) Settle(ctx context.Context, requestID string, microcents int64) error {
+	if microcents < 0 {
 		return fmt.Errorf("settled cost must not be negative")
 	}
 	if s == nil || s.Store == nil || requestID == "" {
@@ -216,9 +220,9 @@ func (s *Service) Settle(ctx context.Context, requestID string, costCents int64)
 	}
 	tag, err := s.Store.Pool.Exec(ctx, `
 		UPDATE budget_reservations
-		SET settled_cost_cents = $2, status = 'settled', settled_at = NOW()
+		SET settled_cost_microcents = $2, settled_cost_cents = $3, status = 'settled', settled_at = NOW()
 		WHERE request_id = $1 AND status = 'reserved'
-	`, requestID, costCents)
+	`, requestID, microcents, store.CeilCents(microcents))
 	if err != nil {
 		return fmt.Errorf("settle budget reservation: %w", err)
 	}
@@ -238,7 +242,7 @@ func (s *Service) SettleEstimated(ctx context.Context, requestID string) (int64,
 	var cost int64
 	err := s.Store.Pool.QueryRow(ctx, `
 		UPDATE budget_reservations SET settled_cost_cents=estimated_cost_cents,
-		status='settled', settled_at=NOW()
+		settled_cost_microcents=estimated_cost_microcents, status='settled', settled_at=NOW()
 		WHERE request_id=$1 AND status='reserved' RETURNING settled_cost_cents
 	`, requestID).Scan(&cost)
 	if errors.Is(err, pgx.ErrNoRows) {

@@ -133,7 +133,7 @@ func TestKeyBudgetExhaustionFreshEditsAndUnpricedDenialBeforeUpstream(t *testing
 	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"id":"budget","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}}`)
+		_, _ = io.WriteString(w, `{"id":"budget","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":3,"total_tokens":103}}`)
 	}))
 	defer mock.Close()
 	setStreamUpstream(t, f, mock.URL, "openai")
@@ -146,7 +146,9 @@ func TestKeyBudgetExhaustionFreshEditsAndUnpricedDenialBeforeUpstream(t *testing
 	if w := request(raw); w.Code != 503 || calls.Load() != 0 {
 		t.Fatalf("unpriced key budget reached upstream: %d %s", w.Code, w.Body)
 	}
-	f.upsertPricing(100, 0) // input rounds to one cent; output is explicitly free
+	// Exactly one cent per call (100 prompt tokens × 10000 µ¢); the ~22-token
+	// admission estimate is under one cent. Output is explicitly free.
+	f.upsertPricing(10000, 0)
 	if w := request(raw); w.Code != 200 || calls.Load() != 1 {
 		t.Fatalf("first call: %d %s", w.Code, w.Body)
 	}

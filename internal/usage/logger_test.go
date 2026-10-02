@@ -132,11 +132,97 @@ func TestAccountingAtomicIdempotentCompletion(t *testing.T) {
 	if err := s.Pool.QueryRow(context.Background(), `SELECT COUNT(*) FROM usage_log`).Scan(&rows); err != nil || rows != 1 {
 		t.Fatalf("usage rows=%d: %v", rows, err)
 	}
-	if err := s.Pool.QueryRow(context.Background(), `SELECT settled_cost_cents FROM budget_reservations WHERE request_id=$1 AND status='settled'`, e.RequestID).Scan(&settled); err != nil || settled != 21 {
-		t.Fatalf("settlement=%d: %v", settled, err)
+	var settledExact *int64
+	if err := s.Pool.QueryRow(context.Background(), `SELECT settled_cost_cents,settled_cost_microcents FROM budget_reservations WHERE request_id=$1 AND status='settled'`, e.RequestID).Scan(&settled, &settledExact); err != nil || settled != 21 || settledExact != nil {
+		t.Fatalf("settlement=%d exact=%v: %v", settled, settledExact, err)
 	}
 	if err := s.BeginAccounting(context.Background(), e, time.Minute); !errors.Is(err, store.ErrAccountingConflict) {
 		t.Fatalf("reused ID accepted: %v", err)
+	}
+}
+
+func microcents(v int64) *int64 { return &v }
+
+func TestExactMicrocentsSettlement(t *testing.T) {
+	s, team, _ := accountingStore(t)
+	t.Cleanup(func() { assertDailyTotals(t, s) })
+	ctx := context.Background()
+	usr, err := s.CreateUser(ctx, "exact@example.test", "Exact", []byte("fixture"), &team, store.RoleMember)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sa, err := s.CreateServiceAccount(ctx, store.CreateServiceAccountParams{TeamID: team, Name: "exact"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vk, err := s.CreateVirtualKey(ctx, store.CreateVirtualKeyParams{TeamID: team, KeyHash: []byte("exact-fixture"), Prefix: "exact", Name: "exact"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	customer, err := s.GetOrCreateCustomer(ctx, team, "exact")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := store.UsageEntry{TeamID: team, UserID: &usr.ID, ServiceAccountID: &sa.ID, KeyID: &vk.ID, CustomerID: &customer.ID,
+		RequestID: "exact", AccountingID: "exact", Alias: "test-model"}
+	if err := s.BeginAccounting(ctx, e, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Pool.Exec(ctx, `INSERT INTO budget_reservations(request_id,team_id,user_id,service_account_id,key_id,customer_id,alias,estimated_cost_cents,estimated_cost_microcents)
+	 VALUES('exact',$1,$2,$3,$4,$5,'test-model',1,5000)`, team, usr.ID, sa.ID, vk.ID, customer.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkAccountingStarted(ctx, "exact"); err != nil {
+		t.Fatal(err)
+	}
+	e.Accounting, e.StatusCode, e.CostMicrocents = "priced", 200, microcents(3000)
+	first, err := s.FinalizeUsage(ctx, e)
+	if err != nil || first.CostCents != 1 || first.CostMicrocents != 3000 || first.Accounting != "priced" {
+		t.Fatalf("exact receipt: %+v %v", first, err)
+	}
+	var cents, settledCents int64
+	var exact, settledExact *int64
+	if err := s.Pool.QueryRow(ctx, `SELECT u.cost_cents,u.cost_microcents,b.settled_cost_cents,b.settled_cost_microcents
+	 FROM usage_log u JOIN budget_reservations b USING(request_id) WHERE u.accounting_id='exact'`).Scan(&cents, &exact, &settledCents, &settledExact); err != nil ||
+		cents != 1 || exact == nil || *exact != 3000 || settledCents != 1 || settledExact == nil || *settledExact != 3000 {
+		t.Fatalf("stored %d/%v settled %d/%v: %v", cents, exact, settledCents, settledExact, err)
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT scope,cost_microcents FROM budget_daily_totals ORDER BY scope`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scopes := map[string]int64{}
+	for rows.Next() {
+		var scope string
+		var total int64
+		if err := rows.Scan(&scope, &total); err != nil {
+			t.Fatal(err)
+		}
+		scopes[scope] = total
+	}
+	rows.Close()
+	if len(scopes) != 5 {
+		t.Fatalf("scopes charged: %v", scopes)
+	}
+	for scope, total := range scopes {
+		if total != 3000 {
+			t.Fatalf("%s daily total %d, want exactly 3000", scope, total)
+		}
+	}
+	e.CostMicrocents = microcents(999000)
+	if again, err := s.FinalizeUsage(ctx, e); err != nil || again != first {
+		t.Fatalf("duplicate rewrote original: %+v %v", again, err)
+	}
+
+	zero := intent(t, s, team, "zero-tokens", true, true)
+	zero.Accounting, zero.StatusCode, zero.CostMicrocents = "priced", 200, microcents(0)
+	if r, err := s.FinalizeUsage(ctx, zero); err != nil || r.CostMicrocents != 0 || r.Accounting != "priced" {
+		t.Fatalf("zero-token receipt: %+v %v", r, err)
+	}
+	var state string
+	if err := s.Pool.QueryRow(ctx, `SELECT accounting_state,cost_cents,cost_microcents FROM usage_log WHERE accounting_id='zero-tokens'`).Scan(&state, &cents, &exact); err != nil ||
+		state != "priced" || cents != 0 || exact == nil || *exact != 0 {
+		t.Fatalf("zero-token row %s %d/%v: %v", state, cents, exact, err)
 	}
 }
 
@@ -223,20 +309,31 @@ func TestAccountingRecoveryStatesAndBounds(t *testing.T) {
 		started, reserve bool
 		want             string
 		cost             int64
+		exact            *int64 // reservation estimate in µ¢, and the expected recovered µ¢
 	}{
-		{"pre-call", false, true, "not_billable", 0},
-		{"no-reservation", true, false, "unknown", 0},
-		{"reserved", true, true, "estimated", 123},
+		{"pre-call", false, true, "not_billable", 0, nil},
+		{"no-reservation", true, false, "unknown", 0, nil},
+		{"reserved", true, true, "estimated", 123, nil},
+		{"reserved-exact", true, true, "estimated", 1, microcents(1234)},
 	} {
 		intent(t, s, team, tc.name, tc.started, tc.reserve)
+		if tc.exact != nil {
+			if _, err := s.Pool.Exec(context.Background(), `UPDATE budget_reservations SET estimated_cost_cents=1,estimated_cost_microcents=$2 WHERE request_id=$1`, tc.name, *tc.exact); err != nil {
+				t.Fatal(err)
+			}
+		}
 		expireIntent(t, s, tc.name)
 		if n, err := s.ReconcileAccounting(context.Background()); err != nil || n != 1 {
 			t.Fatalf("reconcile %s: %d %v", tc.name, n, err)
 		}
 		var state string
 		var cost int64
-		if err := s.Pool.QueryRow(context.Background(), `SELECT accounting_state,cost_cents FROM usage_log WHERE accounting_id=$1`, tc.name).Scan(&state, &cost); err != nil || state != tc.want || cost != tc.cost {
+		var exact *int64
+		if err := s.Pool.QueryRow(context.Background(), `SELECT accounting_state,cost_cents,cost_microcents FROM usage_log WHERE accounting_id=$1`, tc.name).Scan(&state, &cost, &exact); err != nil || state != tc.want || cost != tc.cost {
 			t.Fatalf("%s: %s/%d %v", tc.name, state, cost, err)
+		}
+		if tc.exact != nil && (exact == nil || *exact != *tc.exact) {
+			t.Fatalf("%s: recovered µ¢ %v, want %d", tc.name, exact, *tc.exact)
 		}
 	}
 	for i := range 130 {
@@ -389,7 +486,7 @@ func TestAccountingBudgetIncludesUnreservedHistory(t *testing.T) {
 			if _, err := service.Admit(ctx, req); err != nil {
 				t.Fatal(err)
 			}
-			if err := service.Settle(ctx, req.RequestID, 1); err != nil {
+			if err := service.Settle(ctx, req.RequestID, 1_000_000); err != nil { // 1 cent
 				t.Fatal(err)
 			}
 			e.RequestID, e.CostCents = req.RequestID, 1

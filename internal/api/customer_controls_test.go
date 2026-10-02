@@ -262,10 +262,10 @@ func TestCustomerAtomicBudgetAndSettlementAcrossKeys(t *testing.T) {
 		t.Fatalf("oversold customer budget: admitted %d", len(ids))
 	}
 	for _, id := range ids {
-		if err := f.Budget.Settle(context.Background(), id, 10); err != nil {
+		if err := f.Budget.Settle(context.Background(), id, 10_000_000); err != nil { // 10 cents
 			t.Fatal(err)
 		}
-		if err := f.Budget.Settle(context.Background(), id, 99); err != nil {
+		if err := f.Budget.Settle(context.Background(), id, 99_000_000); err != nil {
 			t.Fatal(err)
 		}
 	}
